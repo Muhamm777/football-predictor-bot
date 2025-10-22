@@ -12,6 +12,7 @@ from scheduler.jobs import job_update_all
 import sqlite3
 from config import DB_PATH
 from storage.db import ensure_db
+from ml.train_all import train_all
 
 app = FastAPI(title="Football Predictor Bot - Web")
 
@@ -123,13 +124,16 @@ async def api_train(request: Request, token: str = ""):
             token = token or ""
     if not API_TOKEN or token != API_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    # For now, just ensure DB exists and return started
+    # For now: run minimal stub to persist placeholder models, then return
     try:
         ensure_db()
     except Exception:
         pass
-    # TODO: hook into ml pipeline task here
-    return {"status": "started"}
+    try:
+        res = train_all()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"train failed: {e}")
+    return {"status": "ok", "result": res}
 
 @app.post("/api/promote")
 async def api_promote(request: Request, token: str = "", name: str = "", version: str = ""):
