@@ -1,0 +1,15 @@
+app = "muhich"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = false
+  min_machines_running = 1
+
+# Persist SQLite DB and metrics under /data (requires a Fly volume named "data")
+[mounts]
+  source = "data"
+  destination = "/data"

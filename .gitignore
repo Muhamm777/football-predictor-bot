@@ -1,0 +1,21 @@
+# venv and caches
+.venv/
+__pycache__/
+*.pyc
+
+# local env
+.env
+.env.*
+
+# logs
+*.log
+
+# data and cache
+cache/
+storage/*.db
+storage/metrics/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/

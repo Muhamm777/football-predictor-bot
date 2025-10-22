@@ -1,0 +1,15 @@
+services:
+- type: web
+  name: muhich
+  env: docker
+  plan: free
+  autoDeploy: true
+  dockerfilePath: ./Dockerfile
+  healthCheckPath: /health
+  envVars:
+  - key: API_TOKEN
+    sync: false
+  - key: PORT
+    value: 8080
+  - key: WEB_BASE_URL
+    sync: false
