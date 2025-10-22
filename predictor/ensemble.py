@@ -8,12 +8,18 @@ _MODEL_A_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "modelA.joblib"))
 _CALIB_A_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "calibA.joblib"))
 _MODEL_B_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "modelB.joblib"))
 _CALIB_B_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "calibB.joblib"))
+_MODEL_C_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "modelC.joblib"))
+_CALIB_C_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "calibC.joblib"))
+_META_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "meta.joblib"))
 
 _loaded = False
 _modelA = None
 _calibA = None
 _modelB = None
 _calibB = None
+_modelC = None
+_calibC = None
+_meta = None
 
 def _try_load_models() -> None:
     global _loaded, _modelA, _calibA, _modelB, _calibB
@@ -29,8 +35,14 @@ def _try_load_models() -> None:
             _modelB = load(_MODEL_B_PATH)
         if os.path.exists(_CALIB_B_PATH):
             _calibB = load(_CALIB_B_PATH)
+        if os.path.exists(_MODEL_C_PATH):
+            _modelC = load(_MODEL_C_PATH)
+        if os.path.exists(_CALIB_C_PATH):
+            _calibC = load(_CALIB_C_PATH)
+        if os.path.exists(_META_PATH):
+            _meta = load(_META_PATH)
     except Exception:
-        _modelA = _calibA = _modelB = _calibB = None
+        _modelA = _calibA = _modelB = _calibB = _modelC = _calibC = _meta = None
     finally:
         _loaded = True
 
@@ -38,7 +50,7 @@ def _try_load_models() -> None:
 def _apply_models(feat: Dict[str, Any]) -> Dict[str, float] | None:
     """Return probabilities dict via ML ensemble if models are available; else None."""
     _try_load_models()
-    if not (_modelA or _modelB):
+    if not (_modelA or _modelB or _modelC or _meta):
         return None
     x, _ = build_feature_vector(feat)
     import numpy as np
@@ -60,18 +72,37 @@ def _apply_models(feat: Dict[str, Any]) -> Dict[str, float] | None:
 
     pa = _proba(_modelA, _calibA)
     pb = _proba(_modelB, _calibB)
-    if not pa and not pb:
+    pc = _proba(_modelC, _calibC)
+    if not pa and not pb and not pc and not _meta:
         return None
+    # If meta model exists, build meta features and use it
+    if _meta is not None:
+        # meta features: concat probs from A/B/C (missing -> uniform) + core odds features
+        def vec(pdct):
+            if not pdct:
+                return [1/3, 1/3, 1/3]
+            return [pdct.get("home",1/3), pdct.get("draw",1/3), pdct.get("away",1/3)]
+        mvec = vec(pa) + vec(pb) + vec(pc)
+        MX = np.array([mvec], dtype=float)
+        try:
+            mp = _meta.predict_proba(MX)
+            if mp.shape[1] == 3:
+                return {"home": float(mp[0,0]), "draw": float(mp[0,1]), "away": float(mp[0,2])}
+        except Exception:
+            pass
     # Weighted blend; if one missing, use the other
-    wA = 0.6 if pa else 0.0
-    wB = 0.4 if pb else 0.0
-    if pa and not pb:
+    wA = 0.5 if pa else 0.0
+    wB = 0.3 if pb else 0.0
+    wC = 0.2 if pc else 0.0
+    if pa and not (pb or pc):
         wA = 1.0
-    if pb and not pa:
+    if pb and not (pa or pc):
         wB = 1.0
-    h = (pa.get("home",0.0) if pa else 0.0) * wA + (pb.get("home",0.0) if pb else 0.0) * wB
-    d = (pa.get("draw",0.0) if pa else 0.0) * wA + (pb.get("draw",0.0) if pb else 0.0) * wB
-    a = (pa.get("away",0.0) if pa else 0.0) * wA + (pb.get("away",0.0) if pb else 0.0) * wB
+    if pc and not (pa or pb):
+        wC = 1.0
+    h = (pa.get("home",0.0) if pa else 0.0) * wA + (pb.get("home",0.0) if pb else 0.0) * wB + (pc.get("home",0.0) if pc else 0.0) * wC
+    d = (pa.get("draw",0.0) if pa else 0.0) * wA + (pb.get("draw",0.0) if pb else 0.0) * wB + (pc.get("draw",0.0) if pc else 0.0) * wC
+    a = (pa.get("away",0.0) if pa else 0.0) * wA + (pb.get("away",0.0) if pb else 0.0) * wB + (pc.get("away",0.0) if pc else 0.0) * wC
     s = h + d + a
     if s <= 1e-9:
         return None

@@ -195,6 +195,11 @@ async def job_update_all():
             # Добавим сентимент (если есть)
             if key in sent_map:
                 features["sentiment_signal"] = sent_map[key]
+            # Skip garbage fixtures without proper team names
+            if not base.get('home') or not base.get('away'):
+                continue
+            if str(base.get('home')).strip().lower() in {"vs","-",""} or str(base.get('away')).strip().lower() in {"vs","-",""}:
+                continue
             probs = combined_prediction(features)
             best_prob = max(probs.get("home",0.0), probs.get("draw",0.0), probs.get("away",0.0))
             # Compute market implied probabilities for EV if odds present
@@ -220,7 +225,7 @@ async def job_update_all():
             except Exception:
                 ev = None
             percent = round(best_prob * 100.0, 1)
-            # Сформируем краткие причины (черновик)
+            # Сформируем краткие причины (фокус на 1X2)
             reasons = []
             lg = base.get('league','')
             if lg:
@@ -228,32 +233,32 @@ async def job_update_all():
             tm = base.get('time','')
             if tm:
                 reasons.append(f"Время матча: {tm}")
-            if key in odds_map:
+            if mkt is not None and key in odds_map:
                 o = odds_map[key]
-                reasons.append(f"Рынок 1X2: {o.get('h')} / {o.get('d')} / {o.get('a')}")
-            else:
-                reasons.append("Без учёта рынка (нет котировок)")
-            if h_form or a_form:
-                hf = h_form.get('home_wdl') if h_form else None
-                af = a_form.get('away_wdl') if a_form else None
-                segs = []
-                if hf:
-                    segs.append(f"дом {hf}")
-                if af:
-                    segs.append(f"выезд {af}")
-                if segs:
-                    reasons.append("Форма: " + ", ".join(segs))
-            if key in sent_map:
-                s = sent_map[key]
-                if s > 0.2:
-                    reasons.append("Сентимент: позитивный")
-                elif s < -0.2:
-                    reasons.append("Сентимент: негативный")
-            text = (
-                f"Оценка проходимости: {percent}%\n"
-                f"Рекомендация: {cat_title}\n"
-                + ("\n".join([f"- {r}" for r in reasons]))
-            )
+                reasons.append(f"Рынок 1X2: {round(mkt['home']*100,1)}% / {round(mkt['draw']*100,1)}% / {round(mkt['away']*100,1)}% (коэф: {o.get('h','?')} / {o.get('d','?')} / {o.get('a','?')})")
+            # Determine category text for UI
+            pick_map = {"home": "П1", "draw": "Х", "away": "П2"}
+            cat_key = "win"
+            cat_title = "Победа"
+            title = f"{cat_title}: {base.get('home','')} vs {base.get('away','')}"
+            # Make explicit recommendation line with model vs market
+            rec_line = None
+            try:
+                model_pct = round(probs.get(outcome,0.0)*100, 1)
+                if mkt is not None:
+                    market_pct = round(mkt.get(outcome,0.0)*100, 1)
+                    ev_pct = round((probs.get(outcome,0.0) - mkt.get(outcome,0.0))*100, 1)
+                    rec_line = f"Выбор: {pick_map[outcome]} (модель {model_pct}%, рынок {market_pct}%, EV +{ev_pct}%)"
+                else:
+                    rec_line = f"Выбор: {pick_map[outcome]} (модель {model_pct}%)"
+            except Exception:
+                rec_line = None
+            lines = []
+            if rec_line:
+                lines.append(rec_line)
+            lines.append(f"Оценка проходимости (макс из 1/Х/2): {percent}%")
+            lines.extend([f"- {r}" for r in reasons])
+            text = "\n".join(lines)
             candidates.append({
                 "title": title,
                 "text": text,
@@ -315,12 +320,14 @@ async def job_update_all():
                 if len(selected) >= MAX_PICKS:
                     break
                 selected.append(f)
-        # Fallback 2: fill with top by prob to ensure UX (up to MAX_PICKS)
+        # Fallback 2: fill with top by prob but only если prob>=0.50 (up to MAX_PICKS)
         if len(selected) < MAX_PICKS and candidates:
             for f in candidates:
                 if len(selected) >= MAX_PICKS:
                     break
-                if f not in selected:
+                if f in selected:
+                    continue
+                if float(f.get("prob",0.0) or 0.0) >= 0.50:
                     selected.append(f)
         # Strip prob from final payload
         for c in selected:
