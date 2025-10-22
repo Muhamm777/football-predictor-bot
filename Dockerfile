@@ -26,17 +26,13 @@ ENV PORT=8080 \
 # Expose the port Fly.io will route to
 EXPOSE 8080
 
-# Healthcheck (optional; Fly also supports http_checks in fly.toml)
+# Healthcheck: use a portable one-liner (no heredoc) for broader builder compatibility
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD python - <<'PY' || exit 1
-import os, sys, urllib.request
-url = f"http://127.0.0.1:{os.environ.get('PORT','8080')}/health"
-try:
-    with urllib.request.urlopen(url, timeout=3) as r:
-        sys.exit(0 if r.status == 200 else 1)
-except Exception:
-    sys.exit(1)
-PY
+  CMD python -c "import os,sys,urllib.request,urllib.error; url=f'http://127.0.0.1:{os.environ.get("PORT","8080")}/health';\
+try:\
+    r=urllib.request.urlopen(url, timeout=3); sys.exit(0 if getattr(r,'status',getattr(r,'code',200))==200 else 1)\
+except Exception:\
+    sys.exit(1)" 
 
 # Run FastAPI via uvicorn
 # App is defined in web_app/main.py as `app`
