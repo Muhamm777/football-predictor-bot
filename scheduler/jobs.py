@@ -263,22 +263,20 @@ async def job_update_all():
         # Rank by probability (desc)
         candidates.sort(key=lambda x: x.get("prob", 0.0), reverse=True)
         candidates_count = len(candidates)
-        # Primary threshold (more coverage): >= 0.80 up to 5 items
+        # Primary threshold (more coverage): target 5 picks
         selected = [c for c in candidates if c.get("prob", 0.0) >= 0.80][:5]
-        # Fallback: ensure at least 3 confident picks by lowering threshold and/or taking top-N
-        if len(selected) < 3:
-            fallback = [c for c in candidates if c.get("prob", 0.0) >= 0.60][:3]
-            # Append missing unique items
+        # Fallback 1: lower threshold to 0.60 and top up to 5
+        if len(selected) < 5:
+            fallback = [c for c in candidates if c.get("prob", 0.0) >= 0.60]
             for f in fallback:
-                if len(selected) >= 3:
+                if len(selected) >= 5:
                     break
                 if f not in selected:
                     selected.append(f)
-        if len(selected) < 3 and candidates:
-            # As a last resort, take top-3 regardless of threshold
-            top_any = candidates[:3]
-            for f in top_any:
-                if len(selected) >= 3:
+        # Fallback 2: take top-5 regardless of threshold
+        if len(selected) < 5 and candidates:
+            for f in candidates:
+                if len(selected) >= 5:
                     break
                 if f not in selected:
                     selected.append(f)
