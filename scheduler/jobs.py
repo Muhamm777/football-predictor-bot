@@ -320,14 +320,14 @@ async def job_update_all():
                 if len(selected) >= MAX_PICKS:
                     break
                 selected.append(f)
-        # Fallback 2: fill with top by prob but only если prob>=0.50 (up to MAX_PICKS)
+        # Fallback 2: fill with top by prob but only если prob>=0.45 (up to MAX_PICKS)
         if len(selected) < MAX_PICKS and candidates:
             for f in candidates:
                 if len(selected) >= MAX_PICKS:
                     break
                 if f in selected:
                     continue
-                if float(f.get("prob",0.0) or 0.0) >= 0.50:
+                if float(f.get("prob",0.0) or 0.0) >= 0.45:
                     selected.append(f)
         # Strip prob from final payload
         for c in selected:

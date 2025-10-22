@@ -7,12 +7,14 @@ from storage.db import get_prepared_picks_for_today, save_prepared_picks
 from pathlib import Path
 import asyncio
 from config import API_TOKEN
-from fastapi import HTTPException
+from fastapi import HTTPException, BackgroundTasks
 from scheduler.jobs import job_update_all
 import sqlite3
 from config import DB_PATH
 from storage.db import ensure_db
 from ml.train_all import train_all
+import os
+from glob import glob
 
 app = FastAPI(title="Football Predictor Bot - Web")
 
@@ -112,7 +114,7 @@ async def api_metrics(token: str = ""):
     return out
 
 @app.post("/api/train")
-async def api_train(request: Request, token: str = ""):
+async def api_train(request: Request, background_tasks: BackgroundTasks, token: str = ""):
     # Placeholder async trigger; full training pipeline will be added in ml/
     if not token:
         token = request.headers.get("X-Api-Token", "")
@@ -124,16 +126,52 @@ async def api_train(request: Request, token: str = ""):
             token = token or ""
     if not API_TOKEN or token != API_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    # For now: run minimal stub to persist placeholder models, then return
+    # Fire-and-forget: run training in background to avoid Render 502 on long calls
     try:
         ensure_db()
     except Exception:
         pass
+    def _run():
+        try:
+            train_all()
+        except Exception:
+            pass
+    background_tasks.add_task(_run)
+    return {"status": "started"}
+
+@app.get("/api/train_start")
+async def api_train_start(request: Request, background_tasks: BackgroundTasks, token: str = ""):
+    # GET-friendly trigger (some hosts restrict POST)
+    if not token:
+        token = request.headers.get("X-Api-Token", "")
+    if not API_TOKEN or token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    def _run():
+        try:
+            train_all()
+        except Exception:
+            pass
+    background_tasks.add_task(_run)
+    return {"status": "started"}
+
+@app.get("/api/train_status")
+async def api_train_status(token: str = ""):
+    if not token:
+        raise HTTPException(status_code=401, detail="Unauthorized (use token query)")
+    if token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    # Check saved models and latest metrics
+    model_dir = os.environ.get("MODEL_DIR", os.path.join(os.path.dirname(__file__), "..", "models"))
+    files = sorted([os.path.basename(p) for p in glob(os.path.join(model_dir, "*.joblib"))])
+    metrics = []
     try:
-        res = train_all()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"train failed: {e}")
-    return {"status": "ok", "result": res}
+        with sqlite3.connect(DB_PATH) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            metrics = [dict(r) for r in cur.execute("SELECT model_name, version, metric, value, created_at FROM model_metrics ORDER BY id DESC LIMIT 20").fetchall()]
+    except Exception:
+        pass
+    return {"models": files, "metrics": metrics}
 
 @app.post("/api/promote")
 async def api_promote(request: Request, token: str = "", name: str = "", version: str = ""):
