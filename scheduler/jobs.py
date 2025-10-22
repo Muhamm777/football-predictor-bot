@@ -260,10 +260,28 @@ async def job_update_all():
                 })
             except Exception:
                 logging.warning("FeatureStore save failed for match %s vs %s", base.get('home',''), base.get('away',''))
-        # Keep only those strictly above 0.93 and take the TOP-5 among them (no fallback below threshold)
+        # Rank by probability (desc)
         candidates.sort(key=lambda x: x.get("prob", 0.0), reverse=True)
         candidates_count = len(candidates)
-        selected = [c for c in candidates if c.get("prob", 0.0) > 0.93][:5]
+        # Primary threshold (more coverage): >= 0.80 up to 5 items
+        selected = [c for c in candidates if c.get("prob", 0.0) >= 0.80][:5]
+        # Fallback: ensure at least 3 confident picks by lowering threshold and/or taking top-N
+        if len(selected) < 3:
+            fallback = [c for c in candidates if c.get("prob", 0.0) >= 0.60][:3]
+            # Append missing unique items
+            for f in fallback:
+                if len(selected) >= 3:
+                    break
+                if f not in selected:
+                    selected.append(f)
+        if len(selected) < 3 and candidates:
+            # As a last resort, take top-3 regardless of threshold
+            top_any = candidates[:3]
+            for f in top_any:
+                if len(selected) >= 3:
+                    break
+                if f not in selected:
+                    selected.append(f)
         # Strip prob from final payload
         for c in selected:
             c.pop("prob", None)
