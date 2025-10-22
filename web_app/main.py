@@ -92,6 +92,114 @@ async def api_clear_demo_today(request: Request, token: str = ""):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/metrics")
+async def api_metrics(token: str = ""):
+    # Simple metrics dump (secured via query header like other endpoints)
+    if not token:
+        raise HTTPException(status_code=401, detail="Unauthorized (use token query)")
+    if token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    out = {"registry": [], "metrics": []}
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            out["registry"] = [dict(r) for r in cur.execute("SELECT name, version, status, created_at FROM model_registry ORDER BY id DESC LIMIT 50").fetchall()]
+            out["metrics"] = [dict(r) for r in cur.execute("SELECT model_name, version, metric, value, created_at FROM model_metrics ORDER BY id DESC LIMIT 100").fetchall()]
+    except Exception as e:
+        return {"error": str(e)}
+    return out
+
+@app.post("/api/train")
+async def api_train(request: Request, token: str = ""):
+    # Placeholder async trigger; full training pipeline will be added in ml/
+    if not token:
+        token = request.headers.get("X-Api-Token", "")
+    if not token:
+        try:
+            form = await request.form()
+            token = form.get("token", "")
+        except Exception:
+            token = token or ""
+    if not API_TOKEN or token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    # For now, just ensure DB exists and return started
+    try:
+        ensure_db()
+    except Exception:
+        pass
+    # TODO: hook into ml pipeline task here
+    return {"status": "started"}
+
+@app.post("/api/promote")
+async def api_promote(request: Request, token: str = "", name: str = "", version: str = ""):
+    if not token:
+        token = request.headers.get("X-Api-Token", "")
+    if not token:
+        try:
+            form = await request.form()
+            token = form.get("token", "")
+            name = name or form.get("name", "")
+            version = version or form.get("version", "")
+        except Exception:
+            token = token or ""
+    if not API_TOKEN or token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not name or not version:
+        raise HTTPException(status_code=400, detail="name and version required")
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            cur = con.cursor()
+            # demote others
+            cur.execute("UPDATE model_registry SET status='inactive' WHERE name=?", (name,))
+            # promote target (insert if missing)
+            cur.execute(
+                "INSERT INTO model_registry(name, version, path, status, created_at) VALUES(?,?,?,?,datetime('now'))",
+                (name, version, '', 'active')
+            )
+            con.commit()
+        return {"promoted": {"name": name, "version": version}}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/rollback")
+async def api_rollback(request: Request, token: str = "", name: str = ""):
+    if not token:
+        token = request.headers.get("X-Api-Token", "")
+    if not token:
+        try:
+            form = await request.form()
+            token = form.get("token", "")
+            name = name or form.get("name", "")
+        except Exception:
+            token = token or ""
+    if not API_TOKEN or token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not name:
+        raise HTTPException(status_code=400, detail="name required")
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            cur = con.cursor()
+            # set last inactive as active
+            row = cur.execute(
+                "SELECT version FROM model_registry WHERE name=? AND status='inactive' ORDER BY id DESC LIMIT 1",
+                (name,)
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="no previous version")
+            prev_ver = row[0]
+            cur.execute("UPDATE model_registry SET status='inactive' WHERE name=?", (name,))
+            cur.execute(
+                "INSERT INTO model_registry(name, version, path, status, created_at) VALUES(?,?,?,?,datetime('now'))",
+                (name, prev_ver, '', 'active')
+            )
+            con.commit()
+        return {"rolled_back": {"name": name, "version": prev_ver}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/seed")
 async def api_seed(request: Request, token: str = "", n: int = 5):
     # Accept token from query, header, or form

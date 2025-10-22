@@ -3,6 +3,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from config import UPDATE_CRON, TIMEZONE, POPULAR_LEAGUES, PUBLISH_CHAT_ID, BOT_TOKEN
+from config import EV_MIN, MIN_CONF, MAX_PICKS
 from storage.db import save_prepared_picks, get_prepared_picks_for_today, upsert_fixtures, make_fixture_id
 from storage.features import save_features
 from scrapers.soccer365 import fetch_fixtures
@@ -196,6 +197,28 @@ async def job_update_all():
                 features["sentiment_signal"] = sent_map[key]
             probs = combined_prediction(features)
             best_prob = max(probs.get("home",0.0), probs.get("draw",0.0), probs.get("away",0.0))
+            # Compute market implied probabilities for EV if odds present
+            mkt = None
+            if key in odds_map:
+                o = odds_map[key]
+                try:
+                    ih = (1.0/float(o.get('h'))) if o.get('h') else None
+                    idr = (1.0/float(o.get('d'))) if o.get('d') else None
+                    ia = (1.0/float(o.get('a'))) if o.get('a') else None
+                    if ih and idr and ia:
+                        s = ih+idr+ia
+                        if s>0:
+                            mkt = {"home": ih/s, "draw": idr/s, "away": ia/s}
+                except Exception:
+                    mkt = None
+            # Choose outcome with max model prob and compute EV edge vs market
+            outcome = max(("home","draw","away"), key=lambda k: probs.get(k,0.0))
+            ev = None
+            try:
+                if mkt is not None:
+                    ev = probs.get(outcome,0.0) - mkt.get(outcome,0.0)
+            except Exception:
+                ev = None
             percent = round(best_prob * 100.0, 1)
             # Сформируем краткие причины (черновик)
             reasons = []
@@ -237,6 +260,8 @@ async def job_update_all():
                 "category": cat_key,
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "prob": best_prob,
+                "edge": ev,
+                "outcome": outcome,
             })
             # Persist per-match features into FeatureStore so other modules can reuse
             try:
@@ -264,20 +289,36 @@ async def job_update_all():
         # Rank by probability (desc)
         candidates.sort(key=lambda x: x.get("prob", 0.0), reverse=True)
         candidates_count = len(candidates)
-        # Primary threshold (more coverage): target 5 picks
-        selected = [c for c in candidates if c.get("prob", 0.0) >= 0.80][:5]
-        # Fallback 1: lower threshold to 0.60 and top up to 5
-        if len(selected) < 5:
-            fallback = [c for c in candidates if c.get("prob", 0.0) >= 0.60]
-            for f in fallback:
-                if len(selected) >= 5:
+        # Primary selection by EV and confidence thresholds
+        def _pass_ev_conf(c: dict) -> bool:
+            p = float(c.get("prob", 0.0) or 0.0)
+            e = c.get("edge", None)
+            if p < MIN_CONF:
+                return False
+            if e is None:
+                # If нет рынка, пропускаем в первичный список только очень уверенные
+                return p >= max(MIN_CONF, 0.70)
+            return (e >= EV_MIN)
+
+        selected = [c for c in candidates if _pass_ev_conf(c)][:MAX_PICKS]
+        # Fallback 1: relax EV to EV_MIN*0.5, keep MIN_CONF, top up to MAX_PICKS
+        if len(selected) < MAX_PICKS:
+            relaxed = []
+            for c in candidates:
+                if c in selected:
+                    continue
+                p = float(c.get("prob",0.0) or 0.0)
+                e = c.get("edge", None)
+                if p >= MIN_CONF and ((e is not None and e >= (EV_MIN*0.5)) or (e is None and p >= max(MIN_CONF, 0.65))):
+                    relaxed.append(c)
+            for f in relaxed:
+                if len(selected) >= MAX_PICKS:
                     break
-                if f not in selected:
-                    selected.append(f)
-        # Fallback 2: take top-5 regardless of threshold
-        if len(selected) < 5 and candidates:
+                selected.append(f)
+        # Fallback 2: fill with top by prob to ensure UX (up to MAX_PICKS)
+        if len(selected) < MAX_PICKS and candidates:
             for f in candidates:
-                if len(selected) >= 5:
+                if len(selected) >= MAX_PICKS:
                     break
                 if f not in selected:
                     selected.append(f)
