@@ -15,6 +15,9 @@ from storage.db import ensure_db
 from ml.train_all import train_all
 import os
 from glob import glob
+from joblib import dump
+import numpy as np
+from sklearn.dummy import DummyClassifier
 
 app = FastAPI(title="Football Predictor Bot - Web")
 
@@ -172,6 +175,38 @@ async def api_train_status(token: str = ""):
     except Exception:
         pass
     return {"models": files, "metrics": metrics}
+
+@app.get("/api/train_fast")
+async def api_train_fast(token: str = ""):
+    # Ultra-fast seeding of models (dummy classifiers) to unblock ensemble
+    if not token:
+        raise HTTPException(status_code=401, detail="Unauthorized (use token query)")
+    if token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    model_dir = os.environ.get("MODEL_DIR", os.path.join(os.path.dirname(__file__), "..", "models"))
+    os.makedirs(model_dir, exist_ok=True)
+    X = np.zeros((30, 6), dtype=float)
+    y = np.array([0,1,2] * 10, dtype=int)
+    names = ["modelA.joblib","modelB.joblib","modelC.joblib","meta.joblib"]
+    for n in names:
+        try:
+            m = DummyClassifier(strategy="uniform")
+            m.fit(X, y)
+            dump(m, os.path.join(model_dir, n))
+        except Exception:
+            pass
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            cur = con.cursor()
+            for nm in ["modelA","modelB","modelC","meta"]:
+                cur.execute(
+                    "INSERT INTO model_metrics(model_name, version, metric, value, created_at) VALUES(?,?,?,?,datetime('now'))",
+                    (nm, "v0", "seed", 0.0),
+                )
+            con.commit()
+    except Exception:
+        pass
+    return {"status": "ok", "seeded": names}
 
 @app.post("/api/promote")
 async def api_promote(request: Request, token: str = "", name: str = "", version: str = ""):
