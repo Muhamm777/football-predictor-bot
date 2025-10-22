@@ -68,6 +68,30 @@ async def api_debug(limit: int = 10):
         return {"error": str(e)}
     return {"today_count": len(today), "total_count": total, "today": today}
 
+@app.post("/api/clear_demo_today")
+async def api_clear_demo_today(request: Request, token: str = ""):
+    # Accept token from header, query, or form
+    if not token:
+        token = request.headers.get("X-Api-Token", "")
+    if not token:
+        try:
+            form = await request.form()
+            token = form.get("token", "")
+        except Exception:
+            token = token or ""
+    if not API_TOKEN or token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).date().isoformat()
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            cur = con.cursor()
+            cur.execute("DELETE FROM prepared_picks WHERE substr(ts,1,10)=? AND category='demo'", (today,))
+            con.commit()
+        return {"deleted": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/seed")
 async def api_seed(request: Request, token: str = "", n: int = 5):
     # Accept token from query, header, or form

@@ -46,7 +46,9 @@ def get_prepared_picks_for_today(limit: int = 5) -> list[dict]:
         # Filter by UTC date (YYYY-MM-DD) portion of ts
         today = datetime.now(timezone.utc).date().isoformat()
         rows = cur.execute(
-            "SELECT id, title, text, category, ts FROM prepared_picks WHERE substr(ts,1,10)=? ORDER BY id DESC LIMIT ?",
+            "SELECT id, title, text, category, ts FROM prepared_picks "
+            "WHERE substr(ts,1,10)=? AND (category IS NULL OR category <> 'demo') "
+            "ORDER BY id DESC LIMIT ?",
             (today, limit),
         ).fetchall()
         return [dict(r) for r in rows]
