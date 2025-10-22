@@ -15,6 +15,7 @@ from aiogram import Bot
 from time import perf_counter
 from metrics.logger import log_metrics
 from scrapers.registry import all_enabled
+import scrapers  # ensure registry scrapers self-register on import
 
 # Placeholder jobs: fetch data and rebuild predictions 3x daily
 
