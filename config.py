@@ -16,29 +16,17 @@ REQUESTS_TIMEOUT = float(os.getenv("REQUESTS_TIMEOUT", "20"))
 RETRIES = int(os.getenv("RETRIES", "3"))
 BACKOFF_BASE = float(os.getenv("BACKOFF_BASE", "0.8"))
 RATE_LIMIT_RPS = float(os.getenv("RATE_LIMIT_RPS", "1.0"))
+EV_MIN = float(os.getenv("EV_MIN", "0.03"))
+MIN_CONF = float(os.getenv("MIN_CONF", "0.55"))
+MAX_PICKS = int(os.getenv("MAX_PICKS", "5"))
+MODEL_DIR = os.getenv("MODEL_DIR", str((Path(__file__).resolve().parent / 'models').resolve()))
 
 # Proxy (HTTP(S) or SOCKS). Example: http://user:pass@host:port or socks5://user:pass@host:port
 PROXY_URL = os.getenv("PROXY_URL", "")
 
-# Popular leagues (used to exclude rare/minor by default). Edit to your preference.
-POPULAR_LEAGUES = set([
-    "Premier League",
-    "LaLiga",
-    "Serie A",
-    "Bundesliga",
-    "Ligue 1",
-    "Eredivisie",
-    "Primeira Liga",
-    "Championship",
-    "Scottish Premiership",
-    "UEFA Champions League",
-    "UEFA Europa League",
-    "UEFA Conference League",
-    "MLS",
-    "Brasileirao",
-    "Argentine Primera",
-    "EFL Cup",
-])
+# Popular leagues list can be provided via env as comma-separated string; if empty -> no filtering
+_PL = os.getenv("POPULAR_LEAGUES", "").strip()
+POPULAR_LEAGUES = set([s.strip() for s in _PL.split(',') if s.strip()]) if _PL else set()
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Moscow")
 WEB_BASE_URL = os.getenv("WEB_BASE_URL", "http://127.0.0.1:8000")
 API_TOKEN = os.getenv("API_TOKEN", "")

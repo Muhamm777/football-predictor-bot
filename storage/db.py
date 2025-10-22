@@ -11,6 +11,9 @@ SCHEMA = [
     "CREATE TABLE IF NOT EXISTS comments (id TEXT PRIMARY KEY, source TEXT, fixture_id TEXT, text TEXT, sentiment REAL, ts TEXT)",
     "CREATE TABLE IF NOT EXISTS predictions (fixture_id TEXT PRIMARY KEY, home REAL, draw REAL, away REAL, confidence REAL, ts TEXT)",
     "CREATE TABLE IF NOT EXISTS prepared_picks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, text TEXT, category TEXT, ts TEXT)",
+    # ML registry: store model versions and metrics
+    "CREATE TABLE IF NOT EXISTS model_registry (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, version TEXT, path TEXT, status TEXT, created_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS model_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, model_name TEXT, version TEXT, metric TEXT, value REAL, created_at TEXT)",
 ]
 
 def ensure_db():
@@ -25,6 +28,8 @@ def ensure_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_odds_fixture ON odds(fixture_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_team_stats_team ON team_stats(team)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_prepared_picks_ts ON prepared_picks(ts)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_model_registry_name ON model_registry(name)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_model_metrics_name ON model_metrics(model_name)")
         con.commit()
 
 def save_prepared_picks(picks: Iterable[dict]):
