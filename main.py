@@ -8,6 +8,7 @@ from scheduler.jobs import start_scheduler
 from scrapers.soccer365 import fetch_fixtures
 from storage.db import get_prepared_picks_for_today
 import httpx
+from urllib.parse import urlparse
 
 logging.basicConfig(level=logging.INFO)
 
@@ -115,15 +116,41 @@ async def cmd_seed(message: types.Message):
 
 async def cmd_seturl(message: types.Message):
     global _current_web_base_url
-    parts = (message.text or "").split(maxsplit=1)
-    if len(parts) < 2:
+    text = message.text or ""
+    parts = text.split(maxsplit=1)
+    candidate = ""
+    if len(parts) >= 2:
+        candidate = parts[1].strip()
+    # Если аргумент не передан текстом, попробуем извлечь URL из сущностей сообщения
+    if not candidate and message.entities:
+        try:
+            for ent in message.entities:
+                if ent.type in {"url", "text_link"}:
+                    if ent.type == "url":
+                        candidate = text[ent.offset: ent.offset + ent.length]
+                    elif ent.type == "text_link" and getattr(ent, "url", None):
+                        candidate = ent.url
+                    break
+        except Exception:
+            pass
+    if not candidate:
         await message.answer("Использование: /seturl https://example.com")
         return
-    new_url = parts[1].strip()
-    if not (new_url.startswith("http://") or new_url.startswith("https://")):
+    # Очистка: убираем переводы строк/лишние пробелы, берём только схему+хост
+    candidate = candidate.strip().split()[0].strip().strip('\r').strip('\n')
+    if not (candidate.startswith("http://") or candidate.startswith("https://")):
         await message.answer("URL должен начинаться с http:// или https://")
         return
-    _current_web_base_url = new_url.rstrip('/')
+    try:
+        pr = urlparse(candidate)
+        if not pr.scheme or not pr.netloc:
+            await message.answer("Некорректный URL. Пример: https://example.com")
+            return
+        base = f"{pr.scheme}://{pr.netloc}"
+    except Exception:
+        await message.answer("Некорректный URL. Пример: https://example.com")
+        return
+    _current_web_base_url = base.rstrip('/')
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="Открыть Mini App", web_app=types.WebAppInfo(url=f"{get_web_base_url()}/tgapp"))]
     ])

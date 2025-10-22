@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from scheduler.jobs import job_update_all
 import sqlite3
 from config import DB_PATH
+from storage.db import ensure_db
 
 app = FastAPI(title="Football Predictor Bot - Web")
 
@@ -22,6 +23,11 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+@app.on_event("startup")
+async def _startup_init_db():
+    # Ensure SQLite schema exists before serving requests
+    ensure_db()
 
 @app.get("/health", response_class=HTMLResponse)
 async def health() -> str:
