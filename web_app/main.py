@@ -18,6 +18,7 @@ from glob import glob
 from joblib import dump
 import numpy as np
 from sklearn.dummy import DummyClassifier
+import logging
 from web_app.telegram_client import send_message
 
 app = FastAPI(title="Football Predictor Bot - Web")
@@ -231,12 +232,22 @@ async def tg_webhook(request: Request):
     # Process in background to acknowledge telegram immediately
     async def _process():
         if text.lower().startswith("/start"):
-            await send_message(chat_id, "Привет! Я присылаю прогнозы 1X2. Нажмите /picks чтобы получить на сегодня.")
+            resp = await send_message(chat_id, "Привет! Я присылаю прогнозы 1X2. Нажмите /picks чтобы получить на сегодня.")
+            try:
+                if not (resp or {}).get("ok"):
+                    logging.warning("tg send_message /start failed: %s", resp)
+            except Exception:
+                pass
             return
         if text.lower().startswith("/picks"):
             picks = get_prepared_picks_for_today(limit=10)
             if not picks:
-                await send_message(chat_id, "Пока нет уверенных подборов. Попробуйте позже.")
+                resp = await send_message(chat_id, "Пока нет уверенных подборов. Попробуйте позже.")
+                try:
+                    if not (resp or {}).get("ok"):
+                        logging.warning("tg send_message /picks empty failed: %s", resp)
+                except Exception:
+                    pass
                 return
             # Format concise list
             lines = []
@@ -250,9 +261,19 @@ async def tg_webhook(request: Request):
                 if cat:
                     line += f" [{cat}]"
                 lines.append(line)
-            await send_message(chat_id, "\n".join(lines))
+            resp = await send_message(chat_id, "\n".join(lines))
+            try:
+                if not (resp or {}).get("ok"):
+                    logging.warning("tg send_message /picks list failed: %s", resp)
+            except Exception:
+                pass
             return
-        await send_message(chat_id, "Команды: /picks — текущие прогнозы")
+        resp = await send_message(chat_id, "Команды: /picks — текущие прогнозы")
+        try:
+            if not (resp or {}).get("ok"):
+                logging.warning("tg send_message default failed: %s", resp)
+        except Exception:
+            pass
     try:
         asyncio.create_task(_process())
     except Exception:
@@ -272,8 +293,8 @@ async def tg_ping(request: Request, chat_id: str = "", text: str = "ping", token
     if not chat_id:
         raise HTTPException(status_code=400, detail="chat_id required")
     try:
-        asyncio.create_task(send_message(chat_id, text))
-        return {"ok": True}
+        resp = await send_message(chat_id, text)
+        return resp
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
