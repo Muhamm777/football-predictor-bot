@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from config import TIMEZONE
+from scrapers.registry import register
 
 HEADERS = {"User-Agent": USER_AGENT}
 
@@ -46,3 +47,16 @@ async def fetch_fixtures() -> List[Dict[str, Any]]:
 async def fetch_stats() -> List[Dict[str, Any]]:
     # TODO: implement real parsing
     return []
+
+# Self-register as a fixtures provider so scheduler can merge via registry
+try:
+    register(
+        name="soccer365",
+        role="fixtures",
+        fetch={"fixtures": fetch_fixtures},
+        enabled=True,
+        notes="Basic fixtures parser (home/away/league/time)"
+    )
+except Exception:
+    # registry is optional; ignore if not available at import time
+    pass

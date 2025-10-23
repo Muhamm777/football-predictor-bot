@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from config import UPDATE_CRON, TIMEZONE, POPULAR_LEAGUES, PUBLISH_CHAT_ID, BOT_TOKEN
@@ -350,14 +351,14 @@ async def job_update_all():
                 if len(selected) >= MAX_PICKS:
                     break
                 selected.append(f)
-        # Fallback 2: fill with top by prob but only если prob>=0.42 (up to MAX_PICKS)
+        # Fallback 2: fill with top by prob but only если prob>=0.40 (up to MAX_PICKS)
         if len(selected) < MAX_PICKS and candidates:
             for f in candidates:
                 if len(selected) >= MAX_PICKS:
                     break
                 if f in selected:
                     continue
-                if float(f.get("prob",0.0) or 0.0) >= 0.42:
+                if float(f.get("prob",0.0) or 0.0) >= 0.40:
                     selected.append(f)
         if len(selected) == 0:
             now = datetime.now(timezone.utc).isoformat()
@@ -388,6 +389,55 @@ async def job_update_all():
                 'picked_count': len(picks or []),
                 'duration_s': round(dt, 3),
                 'odds_failures': odds_failures if 'odds_failures' in locals() else 0,
+            })
+        except Exception:
+            pass
+
+async def job_deep_crawl():
+    """
+    Nightly deep crawl scaffold: politely warm up all registered providers (fixtures and odds_or_prob)
+    with throttling and retries, then run the standard update job. This does not yet persist
+    raw snapshots; it focuses on coverage and stability.
+    Controlled by env vars: DEEP_CRAWL_RATE_MS (default 500)
+    """
+    rate_ms = int(os.environ.get('DEEP_CRAWL_RATE_MS', '500') or '500')
+    total_fx = 0
+    total_odds = 0
+    failures = 0
+    try:
+        reg = all_enabled() or {}
+        # Crawl fixtures first
+        for name, s in reg.items():
+            fx = s.get('fetch', {}).get('fixtures')
+            if not fx:
+                continue
+            try:
+                arr = await asyncio.wait_for(fx(), timeout=10.0)
+                total_fx += len(arr or [])
+            except Exception:
+                failures += 1
+            await asyncio.sleep(max(0.05, rate_ms/1000.0))
+        # Then odds/probabilities
+        for name, s in reg.items():
+            fn = s.get('fetch', {}).get('odds_or_prob')
+            if not fn:
+                continue
+            try:
+                arr = await asyncio.wait_for(fn(), timeout=10.0)
+                total_odds += len(arr or [])
+            except Exception:
+                failures += 1
+            await asyncio.sleep(max(0.05, rate_ms/1000.0))
+        # After warming data sources, run the normal update
+        await job_update_all()
+    except Exception:
+        logging.exception("Deep crawl scaffold failed")
+    finally:
+        try:
+            log_metrics('deep_crawl', {
+                'fixtures_warmed': total_fx,
+                'odds_or_prob_warmed': total_odds,
+                'failures': failures,
             })
         except Exception:
             pass
@@ -425,4 +475,12 @@ async def start_scheduler():
         # Fallback to hourly
         trigger = CronTrigger(minute=0, timezone=TIMEZONE)
     scheduler.add_job(job_update_all, trigger=trigger)
+    # Optionally add nightly deep crawl
+    try:
+        if os.environ.get('DEEP_CRAWL_ENABLED', 'false').lower() in {'1','true','yes','on'}:
+            expr = os.environ.get('DEEP_CRAWL_CRON', '30 2 * * *')
+            dtrigger = CronTrigger.from_crontab(expr, timezone=TIMEZONE)
+            scheduler.add_job(job_deep_crawl, trigger=dtrigger)
+    except Exception:
+        logging.warning("Deep crawl scheduling skipped (misconfigured)")
     scheduler.start()

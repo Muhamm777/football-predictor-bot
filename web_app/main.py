@@ -10,6 +10,7 @@ from config import API_TOKEN
 from fastapi import HTTPException, BackgroundTasks
 from scheduler.jobs import job_update_all
 from scheduler.jobs import start_scheduler
+from scheduler.jobs import job_deep_crawl
 import sqlite3
 from config import DB_PATH
 from storage.db import ensure_db
@@ -21,6 +22,8 @@ import numpy as np
 from sklearn.dummy import DummyClassifier
 import logging
 from web_app.telegram_client import send_message
+from scrapers.registry import all_enabled
+import scrapers  # ensure registry providers are imported
 
 app = FastAPI(title="Football Predictor Bot - Web")
 
@@ -99,6 +102,22 @@ async def api_rebuild(request: Request, token: str = ""):
         raise HTTPException(status_code=401, detail="Unauthorized")
     # Fire-and-forget rebuild (scrape -> predict -> save)
     asyncio.create_task(job_update_all())
+    return {"status": "started"}
+
+@app.post("/api/deep_crawl")
+async def api_deep_crawl(request: Request, token: str = ""):
+    # Manual trigger for nightly deep crawl scaffold
+    if not token:
+        token = request.headers.get("X-Api-Token", "")
+    if not token:
+        try:
+            form = await request.form()
+            token = form.get("token", "")
+        except Exception:
+            token = token or ""
+    if not API_TOKEN or token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    asyncio.create_task(job_deep_crawl())
     return {"status": "started"}
 
 @app.post("/api/publish_now")
@@ -196,6 +215,67 @@ async def api_metrics(token: str = ""):
     except Exception as e:
         return {"error": str(e)}
     return out
+
+@app.get("/api/scrape_status")
+async def api_scrape_status(token: str = ""):
+    # Lightweight diagnostics: check which scrapers are enabled and what they return right now
+    if not token:
+        raise HTTPException(status_code=401, detail="Unauthorized (use token query)")
+    if token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    prov = list((all_enabled() or {}).keys())
+    fixtures_count = 0
+    fixtures_samples: list[dict] = []
+    odds_count = 0
+    odds_samples: list[dict] = []
+    try:
+        reg = all_enabled() or {}
+        # Gather fixtures from any provider that exposes fixtures
+        for name, s in reg.items():
+            fx = s.get("fetch", {}).get("fixtures")
+            if fx:
+                try:
+                    arr = await asyncio.wait_for(fx(), timeout=8.0)
+                except Exception:
+                    arr = []
+                fixtures_count += len(arr or [])
+                for it in (arr or [])[:3]:
+                    fixtures_samples.append({
+                        "provider": name,
+                        "home": it.get("home"),
+                        "away": it.get("away"),
+                        "league": it.get("league"),
+                        "time": it.get("time"),
+                    })
+        # Gather odds/probabilities from providers exposing odds_or_prob
+        for name, s in reg.items():
+            fn = s.get("fetch", {}).get("odds_or_prob")
+            if fn:
+                try:
+                    arr = await asyncio.wait_for(fn(), timeout=8.0)
+                except Exception:
+                    arr = []
+                odds_count += len(arr or [])
+                for it in (arr or [])[:3]:
+                    odds_samples.append({
+                        "provider": name,
+                        "home": it.get("home"),
+                        "away": it.get("away"),
+                        # show either odds or probs brief
+                        "h": it.get("h"),
+                        "d": it.get("d"),
+                        "a": it.get("a"),
+                        "probs": it.get("probs"),
+                    })
+    except Exception:
+        pass
+    return {
+        "providers": prov,
+        "fixtures_count": fixtures_count,
+        "fixtures_samples": fixtures_samples,
+        "odds_or_prob_count": odds_count,
+        "odds_or_prob_samples": odds_samples,
+    }
 
 @app.post("/api/ai_suggest")
 async def api_ai_suggest(token: str = "", top_n: int = 5):
