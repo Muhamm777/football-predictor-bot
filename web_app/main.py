@@ -9,6 +9,7 @@ import asyncio
 from config import API_TOKEN
 from fastapi import HTTPException, BackgroundTasks
 from scheduler.jobs import job_update_all
+from scheduler.jobs import start_scheduler
 import sqlite3
 from config import DB_PATH
 from storage.db import ensure_db
@@ -36,15 +37,52 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 async def _startup_init_db():
     # Ensure SQLite schema exists before serving requests
     ensure_db()
+    try:
+        # Start APScheduler (scrape/predict jobs) on service startup
+        await start_scheduler()
+    except Exception:
+        pass
 
 @app.get("/health", response_class=HTMLResponse)
 async def health() -> str:
     return "OK"
 
 @app.get("/api/picks")
-async def api_picks(limit: int = 10):
+async def api_picks(limit: int = 10, include_info: bool = True, include_demo: bool = True):
     picks: List[Dict] = get_prepared_picks_for_today(limit=limit)
+    if picks and (include_info and include_demo):
+        return picks
+    # Fallback: include info/demo if function filtered them out, or nothing for today
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            where = []
+            params = []
+            # only today
+            where.append("substr(ts,1,10)=date('now')")
+            if not include_info:
+                where.append("category<> 'info'")
+            if not include_demo:
+                where.append("category<> 'demo'")
+            w = (" WHERE " + " AND ".join(where)) if where else ""
+            rows = cur.execute(f"SELECT id,title,text,category,ts FROM prepared_picks{w} ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            if rows:
+                return [dict(r) for r in rows]
+    except Exception:
+        pass
     return picks
+
+@app.get("/api/picks_any")
+async def api_picks_any(limit: int = 10):
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            rows = cur.execute("SELECT id,title,text,category,ts FROM prepared_picks ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return [dict(r) for r in rows]
+    except Exception:
+        return []
 
 @app.post("/api/rebuild")
 async def api_rebuild(request: Request, token: str = ""):
@@ -62,6 +100,47 @@ async def api_rebuild(request: Request, token: str = ""):
     # Fire-and-forget rebuild (scrape -> predict -> save)
     asyncio.create_task(job_update_all())
     return {"status": "started"}
+
+@app.post("/api/publish_now")
+async def api_publish_now(request: Request, token: str = "", chat_id: str = ""):
+    # Secure admin endpoint to publish current picks to Telegram
+    if not token:
+        token = request.headers.get("X-Api-Token", "")
+    if not API_TOKEN or token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not chat_id:
+        chat_id = os.environ.get("PUBLISH_CHAT_ID", "")
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="chat_id required")
+    picks: List[Dict] = get_prepared_picks_for_today(limit=10)
+    if not picks:
+        # Try fallback to any recent picks
+        try:
+            with sqlite3.connect(DB_PATH) as con:
+                con.row_factory = sqlite3.Row
+                cur = con.cursor()
+                rows = cur.execute("SELECT title,text FROM prepared_picks ORDER BY id DESC LIMIT 10").fetchall()
+                picks = [dict(r) for r in rows]
+        except Exception:
+            picks = []
+    if not picks:
+        return {"ok": False, "detail": "no picks available"}
+    # Split and send
+    sent = 0
+    chunks: list[str] = []
+    for i in range(0, len(picks), 5):
+        part = picks[i:i+5]
+        lines = []
+        for p in part:
+            title = p.get("title", "")
+            text = p.get("text", "")
+            lines.append(f"• {title}\n{text}")
+        chunks.append("Подготовленные прогнозы:\n" + "\n\n".join(lines))
+    for msg in chunks:
+        resp = await send_message(chat_id, msg)
+        if (resp or {}).get("ok"):
+            sent += 1
+    return {"ok": True, "chunks": len(chunks), "sent": sent}
 
 @app.get("/api/debug")
 async def api_debug(limit: int = 10):
@@ -242,13 +321,23 @@ async def tg_webhook(request: Request):
         if text.lower().startswith("/picks"):
             picks = get_prepared_picks_for_today(limit=10)
             if not picks:
-                resp = await send_message(chat_id, "Пока нет уверенных подборов. Попробуйте позже.")
+                # Try any picks (including info/demo) if today is empty
                 try:
-                    if not (resp or {}).get("ok"):
-                        logging.warning("tg send_message /picks empty failed: %s", resp)
+                    with sqlite3.connect(DB_PATH) as con:
+                        con.row_factory = sqlite3.Row
+                        cur = con.cursor()
+                        rows = cur.execute("SELECT id,title,text,category,ts FROM prepared_picks ORDER BY id DESC LIMIT 10").fetchall()
+                        picks = [dict(r) for r in rows]
                 except Exception:
-                    pass
-                return
+                    picks = []
+                if not picks:
+                    resp = await send_message(chat_id, "Пока нет уверенных подборов. Попробуйте позже.")
+                    try:
+                        if not (resp or {}).get("ok"):
+                            logging.warning("tg send_message /picks empty failed: %s", resp)
+                    except Exception:
+                        pass
+                    return
             # Format concise list
             lines = []
             for p in picks[:10]:
