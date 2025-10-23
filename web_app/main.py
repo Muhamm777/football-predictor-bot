@@ -18,7 +18,7 @@ from glob import glob
 from joblib import dump
 import numpy as np
 from sklearn.dummy import DummyClassifier
-from .telegram_client import send_message
+from web_app.telegram_client import send_message
 
 app = FastAPI(title="Football Predictor Bot - Web")
 
@@ -228,32 +228,54 @@ async def tg_webhook(request: Request):
     text = (msg.get("text") or "").strip()
     if not chat_id:
         return {"ok": True}
-    # Simple commands
-    if text.lower().startswith("/start"):
-        await send_message(chat_id, "Привет! Я присылаю прогнозы 1X2. Нажмите /picks чтобы получить на сегодня.")
-        return {"ok": True}
-    if text.lower().startswith("/picks"):
-        picks = get_prepared_picks_for_today(limit=10)
-        if not picks:
-            await send_message(chat_id, "Пока нет уверенных подборов. Попробуйте позже.")
-            return {"ok": True}
-        # Format concise list
-        lines = []
-        for p in picks[:10]:
-            title = p.get("title") or ""
-            percent = p.get("percent")
-            cat = p.get("category")
-            line = f"• {title}"
-            if percent:
-                line += f" — {percent}%"
-            if cat:
-                line += f" [{cat}]"
-            lines.append(line)
-        await send_message(chat_id, "\n".join(lines))
-        return {"ok": True}
-    # default echo minimal help
-    await send_message(chat_id, "Команды: /picks — текущие прогнозы")
+    # Process in background to acknowledge telegram immediately
+    async def _process():
+        if text.lower().startswith("/start"):
+            await send_message(chat_id, "Привет! Я присылаю прогнозы 1X2. Нажмите /picks чтобы получить на сегодня.")
+            return
+        if text.lower().startswith("/picks"):
+            picks = get_prepared_picks_for_today(limit=10)
+            if not picks:
+                await send_message(chat_id, "Пока нет уверенных подборов. Попробуйте позже.")
+                return
+            # Format concise list
+            lines = []
+            for p in picks[:10]:
+                title = p.get("title") or ""
+                percent = p.get("percent")
+                cat = p.get("category")
+                line = f"• {title}"
+                if percent:
+                    line += f" — {percent}%"
+                if cat:
+                    line += f" [{cat}]"
+                lines.append(line)
+            await send_message(chat_id, "\n".join(lines))
+            return
+        await send_message(chat_id, "Команды: /picks — текущие прогнозы")
+    try:
+        asyncio.create_task(_process())
+    except Exception:
+        pass
     return {"ok": True}
+
+@app.post("/tg/ping")
+async def tg_ping(request: Request, chat_id: str = "", text: str = "ping", token: str = ""):
+    # Diagnostic: send a message to check BOT_TOKEN delivery; secured by API_TOKEN
+    if not token:
+        token = request.headers.get("X-Api-Token", "")
+    if not API_TOKEN or token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not chat_id:
+        # try env publish chat
+        chat_id = os.environ.get("PUBLISH_CHAT_ID", "")
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="chat_id required")
+    try:
+        asyncio.create_task(send_message(chat_id, text))
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/promote")
 async def api_promote(request: Request, token: str = "", name: str = "", version: str = ""):
