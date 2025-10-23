@@ -18,6 +18,7 @@ from glob import glob
 from joblib import dump
 import numpy as np
 from sklearn.dummy import DummyClassifier
+from .telegram_client import send_message
 
 app = FastAPI(title="Football Predictor Bot - Web")
 
@@ -207,6 +208,52 @@ async def api_train_fast(token: str = ""):
     except Exception:
         pass
     return {"status": "ok", "seeded": names}
+
+# --- Telegram Webhook (no aiogram) ---
+@app.post("/tg/webhook")
+async def tg_webhook(request: Request):
+    secret = os.environ.get("TG_SECRET", "")
+    got = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if secret and got != secret:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        update = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Bad JSON")
+    msg = (update or {}).get("message") or (update or {}).get("edited_message")
+    if not msg:
+        return {"ok": True}
+    chat = msg.get("chat", {})
+    chat_id = chat.get("id")
+    text = (msg.get("text") or "").strip()
+    if not chat_id:
+        return {"ok": True}
+    # Simple commands
+    if text.lower().startswith("/start"):
+        await send_message(chat_id, "Привет! Я присылаю прогнозы 1X2. Нажмите /picks чтобы получить на сегодня.")
+        return {"ok": True}
+    if text.lower().startswith("/picks"):
+        picks = get_prepared_picks_for_today(limit=10)
+        if not picks:
+            await send_message(chat_id, "Пока нет уверенных подборов. Попробуйте позже.")
+            return {"ok": True}
+        # Format concise list
+        lines = []
+        for p in picks[:10]:
+            title = p.get("title") or ""
+            percent = p.get("percent")
+            cat = p.get("category")
+            line = f"• {title}"
+            if percent:
+                line += f" — {percent}%"
+            if cat:
+                line += f" [{cat}]"
+            lines.append(line)
+        await send_message(chat_id, "\n".join(lines))
+        return {"ok": True}
+    # default echo minimal help
+    await send_message(chat_id, "Команды: /picks — текущие прогнозы")
+    return {"ok": True}
 
 @app.post("/api/promote")
 async def api_promote(request: Request, token: str = "", name: str = "", version: str = ""):

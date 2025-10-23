@@ -12,7 +12,7 @@ from scrapers.sstats import fetch_team_stats
 from scrapers.vprognoze import fetch_comments
 from datetime import datetime, timezone, timedelta
 from predictor.ensemble import combined_prediction
-from aiogram import Bot
+from web_app.telegram_client import send_message
 from time import perf_counter
 from metrics.logger import log_metrics
 from scrapers.registry import all_enabled
@@ -21,6 +21,10 @@ import scrapers  # ensure registry scrapers self-register on import
 # Placeholder jobs: fetch data and rebuild predictions 3x daily
 
 scheduler = AsyncIOScheduler(timezone=TIMEZONE)
+
+# Simple in-process odds cache to mitigate transient fetch failures
+_ODDS_CACHE: dict[str, dict] = {}
+_ODDS_CACHE_TIME: float | None = None
 
 async def job_update_all():
     logging.info("Nightly job: scraping -> analysis -> predictions (light placeholder)")
@@ -86,15 +90,41 @@ async def job_update_all():
                     return canon
             return b
 
-        # Подтянем котировки Flashscore (если недоступно — продолжим без них)
+        # Подтянем котировки Flashscore (если недоступно — попробуем ретраем и кэшем)
         odds_map = {}
-        try:
-            odds_list = await fetch_odds()
+        odds_failures = 0
+        warned = False
+        async def _fetch_odds_with_retry(times: int = 3) -> list | None:
+            nonlocal odds_failures, warned
+            backoff = 1
+            for i in range(times):
+                try:
+                    ol = await fetch_odds()
+                    return ol
+                except Exception:
+                    odds_failures += 1
+                    if not warned:
+                        logging.warning("Flashscore odds fetch failed (attempt %d)", i+1)
+                        warned = True
+                await asyncio.sleep(backoff)
+                backoff *= 2
+            return None
+
+        odds_list = await _fetch_odds_with_retry()
+        if odds_list:
             for o in odds_list or []:
                 key = f"{norm(o.get('home',''))}|{norm(o.get('away',''))}"
                 odds_map[key] = {"h": o.get("h"), "d": o.get("d"), "a": o.get("a")}
-        except Exception:
-            logging.warning("Flashscore odds fetch failed; continuing with base signals")
+            # refresh cache
+            _ODDS_CACHE.clear()
+            _ODDS_CACHE.update(odds_map)
+            _ODDS_CACHE_TIME = perf_counter()
+        else:
+            if _ODDS_CACHE:
+                odds_map = dict(_ODDS_CACHE)
+                logging.info("Using cached odds due to fetch failures (%d)", odds_failures)
+            else:
+                logging.warning("Flashscore odds fetch failed; no cache available; continuing without odds")
         # Merge odds/probabilities from registry scrapers (if present)
         try:
             for name, s in (all_enabled() or {}).items():
@@ -329,6 +359,15 @@ async def job_update_all():
                     continue
                 if float(f.get("prob",0.0) or 0.0) >= 0.45:
                     selected.append(f)
+        if len(selected) == 0:
+            now = datetime.now(timezone.utc).isoformat()
+            for i in range(min(3, len(candidates)) or 3):
+                picks.append({
+                    "title": f"Информативно: нет уверенных подборов #{i+1}",
+                    "text": "Недостаточно уверенности или нет котировок для расчёта EV. Проверьте позже или после обновления рынка.",
+                    "category": "info",
+                    "ts": now,
+                })
         # Strip prob from final payload
         for c in selected:
             c.pop("prob", None)
@@ -348,6 +387,7 @@ async def job_update_all():
                 'candidates_count': candidates_count,
                 'picked_count': len(picks or []),
                 'duration_s': round(dt, 3),
+                'odds_failures': odds_failures if 'odds_failures' in locals() else 0,
             })
         except Exception:
             pass
@@ -360,7 +400,6 @@ async def job_publish():
     if not picks:
         logging.info("Publish skipped: no prepared picks for today")
         return
-    bot = Bot(BOT_TOKEN)
     try:
         chunks = []
         # Split into chunks of 5 to avoid overly long messages
@@ -373,12 +412,10 @@ async def job_publish():
                 lines.append(f"• {title}\n{text}")
             chunks.append("Подготовленные прогнозы:\n" + "\n\n".join(lines))
         for msg in chunks:
-            await bot.send_message(chat_id=PUBLISH_CHAT_ID, text=msg)
+            await send_message(PUBLISH_CHAT_ID, msg)
         logging.info("Published %d picks to chat %s", len(picks), PUBLISH_CHAT_ID)
     except Exception:
         logging.exception("Publish job failed")
-    finally:
-        await bot.session.close()
 
 async def start_scheduler():
     # Use cron expression from config (default corresponds to hourly if misconfigured)
