@@ -24,6 +24,7 @@ import logging
 from web_app.telegram_client import send_message
 from scrapers.registry import all_enabled
 import scrapers  # ensure registry providers are imported
+from datetime import datetime, timezone
 
 app = FastAPI(title="Football Predictor Bot - Web")
 
@@ -422,6 +423,37 @@ async def api_train_fast(token: str = ""):
     except Exception:
         pass
     return {"status": "ok", "seeded": names}
+
+@app.get("/api/daily_top5")
+async def api_daily_top5(limit: int = 5):
+    # Open endpoint for mini-app: top-N picks for today based on EV and probability with simple league diversity
+    try:
+        allp = get_prepared_picks_for_today(limit=200) or []
+    except Exception:
+        allp = []
+    def _score(p: dict) -> float:
+        try:
+            ev = float(p.get("edge") or 0.0)
+        except Exception:
+            ev = 0.0
+        try:
+            pr = float(p.get("prob") or 0.0)
+        except Exception:
+            pr = 0.0
+        return ev + max(0.0, pr - 0.5)
+    candidates = [p for p in allp if (p.get("category") not in {"info","demo"})]
+    candidates.sort(key=_score, reverse=True)
+    out: list[dict] = []
+    per_league: dict[str,int] = {}
+    for p in candidates:
+        if len(out) >= max(1, min(limit, 10)):
+            break
+        lg = (p.get("league") or "").strip()
+        if per_league.get(lg, 0) >= 2:
+            continue
+        out.append(p)
+        per_league[lg] = per_league.get(lg, 0) + 1
+    return {"date": datetime.now(timezone.utc).date().isoformat(), "count": len(out), "picks": out}
 
 # --- Telegram Webhook (no aiogram) ---
 @app.post("/tg/webhook")
