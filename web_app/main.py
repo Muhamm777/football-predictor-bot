@@ -197,6 +197,60 @@ async def api_metrics(token: str = ""):
         return {"error": str(e)}
     return out
 
+@app.post("/api/ai_suggest")
+async def api_ai_suggest(token: str = "", top_n: int = 5):
+    if not token:
+        raise HTTPException(status_code=401, detail="Unauthorized (use token)")
+    if token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    recs: list[dict] = []
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            rows = cur.execute(
+                "SELECT model_name, version, metric, value, created_at FROM model_metrics ORDER BY id DESC LIMIT 200"
+            ).fetchall()
+            metrics = [dict(r) for r in rows]
+    except Exception:
+        metrics = []
+    env = {
+        "MIN_CONF": os.environ.get("MIN_CONF", ""),
+        "EV_MIN": os.environ.get("EV_MIN", ""),
+        "MAX_PICKS": os.environ.get("MAX_PICKS", ""),
+        "MODEL_DIR": os.environ.get("MODEL_DIR", ""),
+        "DB_PATH": DB_PATH,
+    }
+    def _avg(vals):
+        xs = [float(v) for v in vals if v is not None]
+        return sum(xs)/len(xs) if xs else None
+    by_model = {}
+    for m in metrics:
+        k = m.get("model_name")
+        by_model.setdefault(k, {}).setdefault(m.get("metric"), []).append(m.get("value"))
+    for name, mm in by_model.items():
+        avg_ll = _avg(mm.get("logloss", []))
+        avg_br = _avg(mm.get("brier", []))
+        if avg_ll is not None and avg_ll > 1.05:
+            recs.append({"type": "hpo", "target": name, "suggest": "increase_capacity_or_regularize", "detail": {"avg_logloss": avg_ll}})
+        if avg_br is not None and avg_br > 0.22:
+            recs.append({"type": "calibration", "target": name, "suggest": "recalibrate_platt_or_isotonic", "detail": {"avg_brier": avg_br}})
+    try:
+        mc = float(env.get("MIN_CONF") or 0)
+    except Exception:
+        mc = 0.0
+    try:
+        ev = float(env.get("EV_MIN") or 0)
+    except Exception:
+        ev = 0.0
+    if mc > 0.5:
+        recs.append({"type": "threshold", "target": "MIN_CONF", "suggest": "lower_to_0.48_0.50"})
+    if ev > 0.0:
+        recs.append({"type": "threshold", "target": "EV_MIN", "suggest": "lower_to_-0.01_0.00"})
+    if not recs:
+        recs.append({"type": "general", "suggest": "run_train_start_and_rebuild", "detail": env})
+    return {"suggestions": recs[:max(1, min(top_n, 20))], "env": env, "metrics_seen": len(metrics)}
+
 @app.post("/api/train")
 async def api_train(request: Request, background_tasks: BackgroundTasks, token: str = ""):
     # Placeholder async trigger; full training pipeline will be added in ml/

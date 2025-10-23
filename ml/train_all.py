@@ -6,6 +6,8 @@ import numpy as np
 from joblib import dump
 from sklearn.ensemble import GradientBoostingClassifier, HistGradientBoostingClassifier, ExtraTreesClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.pipeline import Pipeline
 from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import log_loss, brier_score_loss
@@ -145,13 +147,84 @@ def train_all(model_dir: str | None = None) -> dict:
         except Exception:
             pd = None
 
-    # Meta model: stacking on A/B/C/D val probabilities
+    # Model E (Regularizer): lightweight LogReg with interactions + calibration
+    try:
+        mE_base = Pipeline([
+            ("scaler", StandardScaler(with_mean=False)),
+            ("poly", PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)),
+            ("logreg", LogisticRegression(max_iter=300, multi_class="multinomial", C=1.0))
+        ])
+        mE = CalibratedClassifierCV(mE_base, cv=2, method="sigmoid")
+        mE.fit(Xtr, ytr)
+        dump(mE, root / "modelE.joblib")
+        saved.append("modelE.joblib")
+        pe = mE.predict_proba(Xva)
+        mm = _safe_metric(yva, pe)
+        metrics_rows += [("modelE", version, k, v) for k, v in mm.items()]
+    except Exception:
+        try:
+            mE = DummyClassifier(strategy="uniform")
+            mE.fit(Xtr, ytr)
+            dump(mE, root / "modelE.joblib")
+            saved.append("modelE.joblib")
+            pe = mE.predict_proba(Xva)
+        except Exception:
+            pe = None
+
+    # Meta model: stacking on A/B/C/D/E val probabilities + gating features (confidence/entropy/disagreement)
     # Build train data for meta from validation fold
     # Meta model: stacking if we have at least two base probas
     try:
-        comps = [p for p in [pa, pb, pc, pd] if p is not None]
+        comps = [p for p in [pa, pb, pc, pd, pe] if p is not None]
         if len(comps) >= 2:
-            M_va = np.hstack(comps)
+            # base block: concatenated probabilities
+            M_blocks = [c for c in comps]
+            # gating block: per-model confidence (max prob) and entropy, plus average disagreement
+            def _conf(P):
+                try:
+                    return np.max(P, axis=1)
+                except Exception:
+                    return np.full((P.shape[0] if hasattr(P,'shape') else 1,), 0.0)
+            def _entropy(P):
+                try:
+                    eps = 1e-12
+                    return -np.sum(P * np.log(P + eps), axis=1)
+                except Exception:
+                    return np.full((P.shape[0] if hasattr(P,'shape') else 1,), 10.0)
+            confs = []
+            ents = []
+            for P in [pa, pb, pc, pd, pe]:
+                if P is not None:
+                    confs.append(_conf(P))
+                    ents.append(_entropy(P))
+            # disagreement: mean L1 distance to first available model
+            def _avg_disagreement(arr):
+                if not arr:
+                    return None
+                base = arr[0]
+                diffs = []
+                for Q in arr:
+                    try:
+                        diffs.append(np.sum(np.abs(Q - base), axis=1))
+                    except Exception:
+                        continue
+                if not diffs:
+                    return None
+                try:
+                    return np.mean(np.vstack(diffs), axis=0)
+                except Exception:
+                    return None
+            disg = _avg_disagreement([p for p in [pa, pb, pc, pd, pe] if p is not None])
+            stats_blocks = []
+            if confs:
+                stats_blocks.append(np.vstack(confs).T)
+            if ents:
+                stats_blocks.append(np.vstack(ents).T)
+            if disg is not None:
+                stats_blocks.append(disg.reshape(-1, 1))
+            if stats_blocks:
+                M_blocks.append(np.hstack(stats_blocks))
+            M_va = np.hstack(M_blocks)
             meta = LogisticRegression(max_iter=400, multi_class="multinomial")
             meta.fit(M_va, yva)
             dump(meta, root / "meta.joblib")

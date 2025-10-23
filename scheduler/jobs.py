@@ -205,7 +205,7 @@ async def job_update_all():
         ]
 
         candidates = []
-        for idx, tup in enumerate(upcoming[:30] if upcoming else fixtures[:30]):
+        for idx, tup in enumerate(upcoming[:80] if upcoming else fixtures[:80]):
             base = tup[1] if isinstance(tup, tuple) else tup
             cat_key, cat_title = categories[idx % len(categories)]
             title = f"{cat_title}: {base.get('home','')} vs {base.get('away','')}"
@@ -331,8 +331,8 @@ async def job_update_all():
             if p < MIN_CONF:
                 return False
             if e is None:
-                # If нет рынка, пропускаем в первичный список только очень уверенные
-                return p >= max(MIN_CONF, 0.70)
+                # Если нет рынка, допускаем уверенные кейсы без избыточной строгости
+                return p >= max(MIN_CONF, 0.60)
             return (e >= EV_MIN)
 
         selected = [c for c in candidates if _pass_ev_conf(c)][:MAX_PICKS]
@@ -344,20 +344,20 @@ async def job_update_all():
                     continue
                 p = float(c.get("prob",0.0) or 0.0)
                 e = c.get("edge", None)
-                if p >= MIN_CONF and ((e is not None and e >= (EV_MIN*0.5)) or (e is None and p >= max(MIN_CONF, 0.65))):
+                if p >= MIN_CONF and ((e is not None and e >= (EV_MIN*0.5)) or (e is None and p >= max(MIN_CONF, 0.58))):
                     relaxed.append(c)
             for f in relaxed:
                 if len(selected) >= MAX_PICKS:
                     break
                 selected.append(f)
-        # Fallback 2: fill with top by prob but only если prob>=0.45 (up to MAX_PICKS)
+        # Fallback 2: fill with top by prob but only если prob>=0.42 (up to MAX_PICKS)
         if len(selected) < MAX_PICKS and candidates:
             for f in candidates:
                 if len(selected) >= MAX_PICKS:
                     break
                 if f in selected:
                     continue
-                if float(f.get("prob",0.0) or 0.0) >= 0.45:
+                if float(f.get("prob",0.0) or 0.0) >= 0.42:
                     selected.append(f)
         if len(selected) == 0:
             now = datetime.now(timezone.utc).isoformat()
