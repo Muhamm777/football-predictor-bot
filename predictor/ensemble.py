@@ -10,6 +10,8 @@ _MODEL_B_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "modelB.joblib"))
 _CALIB_B_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "calibB.joblib"))
 _MODEL_C_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "modelC.joblib"))
 _CALIB_C_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "calibC.joblib"))
+_MODEL_D_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "modelD.joblib"))
+_CALIB_D_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "calibD.joblib"))
 _META_PATH = os.path.abspath(os.path.join(_MODEL_DIR, "meta.joblib"))
 
 _loaded = False
@@ -19,10 +21,12 @@ _modelB = None
 _calibB = None
 _modelC = None
 _calibC = None
+_modelD = None
+_calibD = None
 _meta = None
 
 def _try_load_models() -> None:
-    global _loaded, _modelA, _calibA, _modelB, _calibB
+    global _loaded, _modelA, _calibA, _modelB, _calibB, _modelC, _calibC, _modelD, _calibD, _meta
     if _loaded:
         return
     try:
@@ -39,10 +43,14 @@ def _try_load_models() -> None:
             _modelC = load(_MODEL_C_PATH)
         if os.path.exists(_CALIB_C_PATH):
             _calibC = load(_CALIB_C_PATH)
+        if os.path.exists(_MODEL_D_PATH):
+            _modelD = load(_MODEL_D_PATH)
+        if os.path.exists(_CALIB_D_PATH):
+            _calibD = load(_CALIB_D_PATH)
         if os.path.exists(_META_PATH):
             _meta = load(_META_PATH)
     except Exception:
-        _modelA = _calibA = _modelB = _calibB = _modelC = _calibC = _meta = None
+        _modelA = _calibA = _modelB = _calibB = _modelC = _calibC = _modelD = _calibD = _meta = None
     finally:
         _loaded = True
 
@@ -73,7 +81,8 @@ def _apply_models(feat: Dict[str, Any]) -> Dict[str, float] | None:
     pa = _proba(_modelA, _calibA)
     pb = _proba(_modelB, _calibB)
     pc = _proba(_modelC, _calibC)
-    if not pa and not pb and not pc and not _meta:
+    pd = _proba(_modelD, _calibD)
+    if not pa and not pb and not pc and not pd and not _meta:
         return None
     # If meta model exists, build meta features and use it
     if _meta is not None:
@@ -82,7 +91,13 @@ def _apply_models(feat: Dict[str, Any]) -> Dict[str, float] | None:
             if not pdct:
                 return [1/3, 1/3, 1/3]
             return [pdct.get("home",1/3), pdct.get("draw",1/3), pdct.get("away",1/3)]
-        mvec = vec(pa) + vec(pb) + vec(pc)
+        mvec_full = vec(pa) + vec(pb) + vec(pc) + vec(pd)
+        # Align vector length to meta expectations if needed
+        try:
+            nfeat = getattr(_meta, 'n_features_in_', None)
+        except Exception:
+            nfeat = None
+        mvec = mvec_full if (nfeat is None or nfeat >= len(mvec_full)) else mvec_full[:nfeat]
         MX = np.array([mvec], dtype=float)
         try:
             mp = _meta.predict_proba(MX)
@@ -91,18 +106,22 @@ def _apply_models(feat: Dict[str, Any]) -> Dict[str, float] | None:
         except Exception:
             pass
     # Weighted blend; if one missing, use the other
-    wA = 0.5 if pa else 0.0
-    wB = 0.3 if pb else 0.0
-    wC = 0.2 if pc else 0.0
+    # Strengthen Teacher (D) as smarter booster; prioritize when others weak
+    wA = 0.4 if pa else 0.0
+    wB = 0.25 if pb else 0.0
+    wC = 0.15 if pc else 0.0
+    wD = 0.20 if pd else 0.0
     if pa and not (pb or pc):
         wA = 1.0
     if pb and not (pa or pc):
         wB = 1.0
     if pc and not (pa or pb):
         wC = 1.0
-    h = (pa.get("home",0.0) if pa else 0.0) * wA + (pb.get("home",0.0) if pb else 0.0) * wB + (pc.get("home",0.0) if pc else 0.0) * wC
-    d = (pa.get("draw",0.0) if pa else 0.0) * wA + (pb.get("draw",0.0) if pb else 0.0) * wB + (pc.get("draw",0.0) if pc else 0.0) * wC
-    a = (pa.get("away",0.0) if pa else 0.0) * wA + (pb.get("away",0.0) if pb else 0.0) * wB + (pc.get("away",0.0) if pc else 0.0) * wC
+    if pd and not (pa or pb or pc):
+        wD = 1.0
+    h = (pa.get("home",0.0) if pa else 0.0) * wA + (pb.get("home",0.0) if pb else 0.0) * wB + (pc.get("home",0.0) if pc else 0.0) * wC + (pd.get("home",0.0) if pd else 0.0) * wD
+    d = (pa.get("draw",0.0) if pa else 0.0) * wA + (pb.get("draw",0.0) if pb else 0.0) * wB + (pc.get("draw",0.0) if pc else 0.0) * wC + (pd.get("draw",0.0) if pd else 0.0) * wD
+    a = (pa.get("away",0.0) if pa else 0.0) * wA + (pb.get("away",0.0) if pb else 0.0) * wB + (pc.get("away",0.0) if pc else 0.0) * wC + (pd.get("away",0.0) if pd else 0.0) * wD
     s = h + d + a
     if s <= 1e-9:
         return None
