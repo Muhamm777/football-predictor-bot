@@ -1,0 +1,23 @@
+﻿{
+    "probs":  0,
+    "odds":  {
+                 "matchoutlook":  2,
+                 "synth":  3,
+                 "free_engine":  0,
+                 "free_synth_odds":  0,
+                 "flashscore":  0,
+                 "vprognoze":  3
+             },
+    "overlap":  {
+                    "matchoutlook":  0,
+                    "synth":  0,
+                    "free_engine":  0,
+                    "free_synth_odds":  0,
+                    "flashscore":  0,
+                    "vprognoze":  0
+                },
+    "missing_odds_for_probs":  0,
+    "samples_missing":  [
+
+                        ]
+}

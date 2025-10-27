@@ -1,0 +1,92 @@
+﻿{
+    "providers":  [
+                      {
+                          "name":  "matchoutlook",
+                          "count":  2
+                      },
+                      {
+                          "name":  "synth",
+                          "count":  3
+                      },
+                      {
+                          "name":  "free_engine",
+                          "count":  0,
+                          "error":  true
+                      },
+                      {
+                          "name":  "free_synth_odds",
+                          "count":  0
+                      },
+                      {
+                          "name":  "flashscore",
+                          "count":  0
+                      },
+                      {
+                          "name":  "vprognoze",
+                          "count":  3
+                      }
+                  ],
+    "total":  8,
+    "samples":  [
+                    {
+                        "provider":  "matchoutlook",
+                        "home":  "Qarabag",
+                        "away":  "KeÅla",
+                        "probs":  {
+                                      "home":  0.62,
+                                      "draw":  0.22,
+                                      "away":  0.16
+                                  }
+                    },
+                    {
+                        "provider":  "matchoutlook",
+                        "home":  "Shanghai Shenhua",
+                        "away":  "Dalian Yingbo",
+                        "probs":  {
+                                      "home":  0.62,
+                                      "draw":  0.22,
+                                      "away":  0.16
+                                  }
+                    },
+                    {
+                        "provider":  "synth",
+                        "home":  "Arsenal",
+                        "away":  "Chelsea",
+                        "probs":  {
+                                      "home":  0.34,
+                                      "draw":  0.32,
+                                      "away":  0.34
+                                  }
+                    },
+                    {
+                        "provider":  "synth",
+                        "home":  "Bayern Munich",
+                        "away":  "Borussia Dortmund",
+                        "probs":  {
+                                      "home":  0.34,
+                                      "draw":  0.32,
+                                      "away":  0.34
+                                  }
+                    },
+                    {
+                        "provider":  "vprognoze",
+                        "home":  "Arsenal",
+                        "away":  "Chelsea",
+                        "probs":  {
+                                      "home":  0.42400000000000004,
+                                      "draw":  0.24,
+                                      "away":  0.33599999999999997
+                                  }
+                    },
+                    {
+                        "provider":  "vprognoze",
+                        "home":  "Bayern Munich",
+                        "away":  "Borussia Dortmund",
+                        "probs":  {
+                                      "home":  0.42400000000000004,
+                                      "draw":  0.24,
+                                      "away":  0.33599999999999997
+                                  }
+                    }
+                ]
+}

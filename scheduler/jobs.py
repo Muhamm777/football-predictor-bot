@@ -3,7 +3,9 @@ import logging
 import os
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+import httpx
 from config import UPDATE_CRON, TIMEZONE, POPULAR_LEAGUES, PUBLISH_CHAT_ID, BOT_TOKEN
+from config import API_TOKEN
 from config import EV_MIN, MIN_CONF, MAX_PICKS
 from storage.db import save_prepared_picks, get_prepared_picks_for_today, upsert_fixtures, make_fixture_id
 from storage.features import save_features
@@ -483,4 +485,52 @@ async def start_scheduler():
             scheduler.add_job(job_deep_crawl, trigger=dtrigger)
     except Exception:
         logging.warning("Deep crawl scheduling skipped (misconfigured)")
+    # Optional: auto-build picks periodically (default every 30 minutes)
+    try:
+        expr = os.environ.get('BUILD_PICKS_CRON', '*/30 * * * *')
+        btrigger = CronTrigger.from_crontab(expr, timezone=TIMEZONE)
+        async def _job_build_picks():
+            try:
+                url = f"http://127.0.0.1:8000/api/build_picks?token={API_TOKEN}&limit=10"
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    await client.post(url)
+            except Exception:
+                logging.warning("Scheduled build_picks call failed")
+        scheduler.add_job(_job_build_picks, trigger=btrigger)
+    except Exception:
+        logging.warning("BUILD_PICKS_CRON invalid; skipping scheduled build picks")
+    # Nightly unmatched pairs summary
+    try:
+        expr_u = os.environ.get('UNMATCHED_SUMMARY_CRON', '15 3 * * *')
+        utrigger = CronTrigger.from_crontab(expr_u, timezone=TIMEZONE)
+        async def _job_unmatched_summary():
+            try:
+                import sqlite3
+                from datetime import datetime, timezone
+                DB_PATH = os.environ.get('DB_PATH') or str((__file__))
+                today = datetime.now(timezone.utc).date().isoformat()
+                with sqlite3.connect(DB_PATH) as con:
+                    cur = con.cursor()
+                    cur.execute("CREATE TABLE IF NOT EXISTS unmatched_pairs (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, home TEXT, away TEXT, created_at TEXT)")
+                    rows = cur.execute("SELECT home, away, COUNT(*) as c FROM unmatched_pairs WHERE date=? GROUP BY home, away ORDER BY c DESC LIMIT 20", (today,)).fetchall()
+                    logging.info("Unmatched summary for %s: %s", today, rows)
+            except Exception:
+                logging.warning("Unmatched summary job failed")
+        scheduler.add_job(_job_unmatched_summary, trigger=utrigger)
+    except Exception:
+        logging.warning("UNMATCHED_SUMMARY_CRON invalid; skipping summary job")
+    # Periodic Top-7 build (default every 10 minutes)
+    try:
+        expr_t7 = os.environ.get('TOP7_CRON', '*/10 * * * *')
+        t7trigger = CronTrigger.from_crontab(expr_t7, timezone=TIMEZONE)
+        async def _job_top7():
+            try:
+                url = f"http://127.0.0.1:8000/api/top7_build?token={API_TOKEN}&limit=7"
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    await client.post(url)
+            except Exception:
+                logging.warning("Scheduled top7_build call failed")
+        scheduler.add_job(_job_top7, trigger=t7trigger)
+    except Exception:
+        logging.warning("TOP7_CRON invalid; skipping top7 build job")
     scheduler.start()

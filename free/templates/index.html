@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Главная - Футбольный Бот Прогнозов{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="jumbotron bg-light p-5 rounded">
+            <h1 class="display-4">
+                <i class="fas fa-futbol text-primary"></i>
+                Футбольный Бот Прогнозов
+            </h1>
+            <p class="lead">
+                Получайте точные прогнозы на футбольные матчи с помощью искусственного интеллекта.
+                Наш бот анализирует статистику команд, форму игроков и исторические данные.
+            </p>
+            <hr class="my-4">
+            <p>
+                Используйте машинное обучение для получения прогнозов с высокой точностью.
+                Анализируйте статистику, получайте рекомендации и следите за результатами.
+            </p>
+            <a class="btn btn-primary btn-lg" href="{{ url_for('predictions') }}" role="button">
+                <i class="fas fa-crystal-ball"></i> Посмотреть Прогнозы
+            </a>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-line"></i> Быстрая Статистика</h5>
+            </div>
+            <div class="card-body">
+                <div id="quick-stats">
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-cog"></i> Статус Системы</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <span>Модель ИИ:</span>
+                    <span id="model-status" class="badge bg-secondary">Проверка...</span>
+                </div>
+                <div class="d-flex justify-content-between mt-2">
+                    <span>API Данных:</span>
+                    <span id="api-status" class="badge bg-secondary">Проверка...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-brain fa-3x text-primary mb-3"></i>
+                <h5 class="card-title">Искусственный Интеллект</h5>
+                <p class="card-text">
+                    Используем передовые алгоритмы машинного обучения для анализа данных и создания прогнозов.
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-database fa-3x text-success mb-3"></i>
+                <h5 class="card-title">Большие Данные</h5>
+                <p class="card-text">
+                    Анализируем тысячи матчей, статистику команд и игроков для максимальной точности.
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-mobile-alt fa-3x text-info mb-3"></i>
+                <h5 class="card-title">Удобный Интерфейс</h5>
+                <p class="card-text">
+                    Простой и интуитивный веб-интерфейс для просмотра прогнозов и статистики.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // Загружаем быструю статистику
+    loadQuickStats();
+    checkSystemStatus();
+});
+
+function loadQuickStats() {
+    $.get('/api/stats')
+        .done(function(data) {
+            $('#quick-stats').html(`
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h4 class="text-primary">${data.total_matches}</h4>
+                        <small>Матчей</small>
+                    </div>
+                    <div class="col-6">
+                        <h4 class="text-success">${Object.keys(data.competitions).length}</h4>
+                        <small>Лиг</small>
+                    </div>
+                </div>
+            `);
+        })
+        .fail(function() {
+            $('#quick-stats').html('<p class="text-muted">Данные недоступны</p>');
+        });
+}
+
+function checkSystemStatus() {
+    // Проверяем статус модели
+    $.get('/api/stats')
+        .done(function(data) {
+            if (data.model_trained) {
+                $('#model-status').removeClass('bg-secondary').addClass('bg-success').text('Обучена');
+            } else {
+                $('#model-status').removeClass('bg-secondary').addClass('bg-warning').text('Не обучена');
+            }
+        });
+    
+    // Проверяем API
+    $('#api-status').removeClass('bg-secondary').addClass('bg-success').text('Активен');
+}
+</script>
+{% endblock %}

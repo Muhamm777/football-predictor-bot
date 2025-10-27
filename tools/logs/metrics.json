@@ -1,0 +1,69 @@
+﻿{
+    "registry":  [
+                     {
+                         "name":  "free_engine",
+                         "version":  "v0",
+                         "status":  "active",
+                         "created_at":  "2025-10-26 16:42:18"
+                     }
+                 ],
+    "metrics":  [
+                    {
+                        "model_name":  "free_engine",
+                        "version":  "v0",
+                        "metric":  "brier",
+                        "value":  0.6536973435873791,
+                        "created_at":  "2025-10-26 16:42:18"
+                    },
+                    {
+                        "model_name":  "free_engine",
+                        "version":  "v0",
+                        "metric":  "logloss",
+                        "value":  1.0802216143022438,
+                        "created_at":  "2025-10-26 16:42:18"
+                    },
+                    {
+                        "model_name":  "free_engine",
+                        "version":  "v0",
+                        "metric":  "accuracy",
+                        "value":  0.43781094527363185,
+                        "created_at":  "2025-10-26 16:42:18"
+                    }
+                ],
+    "free_engine":  {
+                        "active":  {
+                                       "name":  "free_engine",
+                                       "version":  "v0",
+                                       "status":  "active",
+                                       "created_at":  "2025-10-26 16:42:18"
+                                   },
+                        "latest_metrics":  {
+                                               "accuracy":  {
+                                                                "value":  0.43781094527363185,
+                                                                "created_at":  "2025-10-26 16:42:18",
+                                                                "version":  "v0"
+                                                            },
+                                               "logloss":  {
+                                                               "value":  1.0802216143022438,
+                                                               "created_at":  "2025-10-26 16:42:18",
+                                                               "version":  "v0"
+                                                           },
+                                               "brier":  {
+                                                             "value":  0.6536973435873791,
+                                                             "created_at":  "2025-10-26 16:42:18",
+                                                             "version":  "v0"
+                                                         }
+                                           }
+                    },
+    "summary_today":  {
+                          "date":  "2025-10-26",
+                          "total":  114,
+                          "by_category":  {
+                                              "auto":  70,
+                                              "info":  42,
+                                              "win":  2
+                                          },
+                          "avg_ev":  -0.03085714285714286,
+                          "avg_prob":  0.4237142857142857
+                      }
+}

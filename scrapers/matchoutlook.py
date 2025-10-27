@@ -71,10 +71,12 @@ async def fetch_fixtures() -> List[Dict[str, Any]]:
                     away = ""
                     mc = card.select_one(".match-content")
                     if mc:
-                        bolds = mc.find_all("b")
-                        if len(bolds) >= 2:
-                            home = bolds[0].get_text(strip=True)
-                            away = bolds[1].get_text(strip=True)
+                        bolds = [b.get_text(strip=True) for b in mc.find_all("b")]
+                        # filter out placeholders like 'vs' or empty
+                        names = [t for t in bolds if t and t.lower() not in ("vs", "v", "-")]
+                        if len(names) >= 2:
+                            home = names[0]
+                            away = names[1]
                     if home and away:
                         out.append({
                             "league": league,
@@ -114,10 +116,11 @@ async def fetch_odds_or_probabilities() -> List[Dict[str, Any]]:
                     home = away = ""
                     mc = card.select_one(".match-content")
                     if mc:
-                        bolds = mc.find_all("b")
-                        if len(bolds) >= 2:
-                            home = bolds[0].get_text(strip=True)
-                            away = bolds[1].get_text(strip=True)
+                        bolds = [b.get_text(strip=True) for b in mc.find_all("b")]
+                        names = [t for t in bolds if t and t.lower() not in ("vs", "v", "-")]
+                        if len(names) >= 2:
+                            home = names[0]
+                            away = names[1]
                     if not (home and away):
                         continue
                     # Best Bet label

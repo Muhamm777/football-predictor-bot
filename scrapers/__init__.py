@@ -7,6 +7,8 @@ This ensures registry-based sources are available to the scheduler.
 from . import matchoutlook  # noqa: F401
 from . import soccer365     # noqa: F401
 from . import synth         # noqa: F401
+from . import free_engine   # noqa: F401
+from . import free_synth_odds  # noqa: F401
 
 # Optionally keep placeholders disabled until implemented
 # from . import bigsoccer  # sentiment (disabled by default)

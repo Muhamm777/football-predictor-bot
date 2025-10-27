@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Прогнозы - Футбольный Бот Прогнозов{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-crystal-ball"></i> Прогнозы на Матчи</h2>
+    <button class="btn btn-outline-primary" onclick="refreshPredictions()">
+        <i class="fas fa-sync-alt"></i> Обновить
+    </button>
+</div>
+
+<div id="loading" class="text-center loading">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Загрузка прогнозов...</span>
+    </div>
+    <p class="mt-2">Анализируем данные и создаем прогнозы...</p>
+</div>
+
+<div id="predictions-container">
+    {% if predictions %}
+        {% for item in predictions %}
+        <div class="card prediction-card mb-3">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="text-center">
+                                <h5 class="team-name">{{ item.match.homeTeam.name }}</h5>
+                                <small class="text-muted">Дома</small>
+                            </div>
+                            <div class="text-center mx-3">
+                                <span class="badge bg-secondary">VS</span>
+                            </div>
+                            <div class="text-center">
+                                <h5 class="team-name">{{ item.match.awayTeam.name }}</h5>
+                                <small class="text-muted">В гостях</small>
+                            </div>
+                        </div>
+                        <div class="text-center mt-2">
+                            <small class="text-muted">
+                                <i class="fas fa-calendar"></i>
+                                {{ item.match.utcDate[:10] }}
+                                <i class="fas fa-clock ms-2"></i>
+                                {{ item.match.utcDate[11:16] }}
+                            </small>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="prediction-result text-center">
+                            {% set prediction = item.prediction %}
+                            {% if prediction.predicted_result == 'HOME_WIN' %}
+                                <span class="badge bg-success fs-6">Победа {{ item.match.homeTeam.name }}</span>
+                            {% elif prediction.predicted_result == 'AWAY_WIN' %}
+                                <span class="badge bg-success fs-6">Победа {{ item.match.awayTeam.name }}</span>
+                            {% else %}
+                                <span class="badge bg-warning fs-6">Ничья</span>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mt-2">
+                            <div class="progress">
+                                <div class="progress-bar" role="progressbar" 
+                                     style="width: {{ (prediction.confidence * 100)|int }}%"
+                                     aria-valuenow="{{ (prediction.confidence * 100)|int }}" 
+                                     aria-valuemin="0" aria-valuemax="100">
+                                    {{ (prediction.confidence * 100)|int }}% уверенности
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-2">
+                            <small class="text-muted">{{ prediction.recommendation }}</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card bg-light">
+                            <div class="card-body py-2">
+                                <div class="row text-center">
+                                    <div class="col-4">
+                                        <small class="text-muted">Победа {{ item.match.homeTeam.name }}</small>
+                                        <div class="fw-bold text-success">
+                                            {{ (prediction.probabilities.HOME_WIN * 100)|int }}%
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <small class="text-muted">Ничья</small>
+                                        <div class="fw-bold text-warning">
+                                            {{ (prediction.probabilities.DRAW * 100)|int }}%
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <small class="text-muted">Победа {{ item.match.awayTeam.name }}</small>
+                                        <div class="fw-bold text-success">
+                                            {{ (prediction.probabilities.AWAY_WIN * 100)|int }}%
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="text-center py-5">
+            <i class="fas fa-exclamation-triangle fa-3x text-muted mb-3"></i>
+            <h4>Прогнозы недоступны</h4>
+            <p class="text-muted">
+                Возможно, модель не обучена или нет доступных матчей.
+                <a href="{{ url_for('training') }}">Обучите модель</a> для получения прогнозов.
+            </p>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Модальное окно для детального прогноза -->
+<div class="modal fade" id="predictionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Детальный Прогноз</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="predictionDetails">
+                <!-- Детали прогноза будут загружены здесь -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // Добавляем классы уверенности к карточкам
+    $('.prediction-card').each(function() {
+        const confidence = parseFloat($(this).find('.progress-bar').attr('aria-valuenow'));
+        if (confidence >= 70) {
+            $(this).addClass('confidence-high');
+        } else if (confidence >= 50) {
+            $(this).addClass('confidence-medium');
+        } else {
+            $(this).addClass('confidence-low');
+        }
+    });
+});
+
+function refreshPredictions() {
+    $('#loading').show();
+    $('#predictions-container').hide();
+    
+    setTimeout(function() {
+        location.reload();
+    }, 1000);
+}
+
+function showPredictionDetails(matchId) {
+    // Здесь можно добавить логику для показа детального прогноза
+    $('#predictionModal').modal('show');
+}
+</script>
+{% endblock %}

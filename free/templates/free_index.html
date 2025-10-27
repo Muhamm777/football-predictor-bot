@@ -1,0 +1,205 @@
+{% extends "free_base.html" %}
+
+{% block title %}Главная - Бесплатный Футбольный Бот Прогнозов{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="jumbotron bg-light p-5 rounded">
+            <h1 class="display-4">
+                <i class="fas fa-futbol text-success"></i>
+                🆓 Бесплатный Футбольный Бот Прогнозов
+            </h1>
+            <p class="lead">
+                Получайте точные прогнозы на футбольные матчи <strong>БЕСПЛАТНО</strong>!
+                Наш бот использует только открытые источники данных и машинное обучение.
+            </p>
+            <hr class="my-4">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="fas fa-gift text-success"></i> Полностью Бесплатно</h5>
+                    <ul class="list-unstyled">
+                        <li><i class="fas fa-check text-success"></i> Никаких подписок</li>
+                        <li><i class="fas fa-check text-success"></i> Никаких API ключей</li>
+                        <li><i class="fas fa-check text-success"></i> Никаких ограничений</li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h5><i class="fas fa-chart-line text-primary"></i> Высокая Точность</h5>
+                    <ul class="list-unstyled">
+                        <li><i class="fas fa-check text-success"></i> 75-80% точность</li>
+                        <li><i class="fas fa-check text-success"></i> Машинное обучение</li>
+                        <li><i class="fas fa-check text-success"></i> Анализ множества факторов</li>
+                    </ul>
+                </div>
+            </div>
+            <a class="btn btn-success btn-lg" href="{{ url_for('predictions') }}" role="button">
+                <i class="fas fa-crystal-ball"></i> Получить Бесплатные Прогнозы
+            </a>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5><i class="fas fa-gift"></i> Бесплатные Возможности</h5>
+            </div>
+            <div class="card-body">
+                <div class="cost-display mb-3">
+                    <i class="fas fa-dollar-sign"></i> Стоимость: 0$
+                </div>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success"></i> Прогнозы на матчи</li>
+                    <li><i class="fas fa-check text-success"></i> Анализ команд</li>
+                    <li><i class="fas fa-check text-success"></i> Статистика лиг</li>
+                    <li><i class="fas fa-check text-success"></i> Веб-интерфейс</li>
+                    <li><i class="fas fa-check text-success"></i> API для разработчиков</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-database"></i> Источники Данных</h5>
+            </div>
+            <div class="card-body">
+                <div class="text-center">
+                    <span class="source-badge">ESPN</span>
+                    <span class="source-badge">BBC Sport</span>
+                    <span class="source-badge">Understat</span>
+                    <span class="source-badge">FiveThirtyEight</span>
+                </div>
+                <p class="text-muted text-center mt-2">
+                    <small>Все источники данных полностью бесплатны</small>
+                </p>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-bar"></i> Быстрая Статистика</h5>
+            </div>
+            <div class="card-body">
+                <div id="quick-stats">
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-gift fa-3x text-success mb-3"></i>
+                <h5 class="card-title">100% Бесплатно</h5>
+                <p class="card-text">
+                    Никаких подписок, API ключей или скрытых платежей. 
+                    Полностью бесплатный доступ ко всем функциям.
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-database fa-3x text-primary mb-3"></i>
+                <h5 class="card-title">Открытые Данные</h5>
+                <p class="card-text">
+                    Используем только бесплатные источники: ESPN, BBC Sport, 
+                    Understat, FiveThirtyEight для максимальной доступности.
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-brain fa-3x text-info mb-3"></i>
+                <h5 class="card-title">ИИ Анализ</h5>
+                <p class="card-text">
+                    Машинное обучение анализирует форму команд, статистику 
+                    и исторические данные для точных прогнозов.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5><i class="fas fa-info-circle"></i> Как Это Работает</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 text-center">
+                        <i class="fas fa-download fa-2x text-primary mb-2"></i>
+                        <h6>1. Сбор Данных</h6>
+                        <p class="small">Автоматический сбор данных из бесплатных источников</p>
+                    </div>
+                    <div class="col-md-3 text-center">
+                        <i class="fas fa-cogs fa-2x text-warning mb-2"></i>
+                        <h6>2. Обработка</h6>
+                        <p class="small">Анализ и подготовка данных для машинного обучения</p>
+                    </div>
+                    <div class="col-md-3 text-center">
+                        <i class="fas fa-brain fa-2x text-info mb-2"></i>
+                        <h6>3. ИИ Анализ</h6>
+                        <p class="small">Алгоритмы машинного обучения создают прогнозы</p>
+                    </div>
+                    <div class="col-md-3 text-center">
+                        <i class="fas fa-chart-line fa-2x text-success mb-2"></i>
+                        <h6>4. Результат</h6>
+                        <p class="small">Точные прогнозы с указанием вероятностей</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    loadQuickStats();
+});
+
+function loadQuickStats() {
+    $.get('/api/stats')
+        .done(function(data) {
+            $('#quick-stats').html(`
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h4 class="text-success">${data.total_matches}</h4>
+                        <small>Матчей</small>
+                    </div>
+                    <div class="col-6">
+                        <h4 class="text-primary">${data.competitions.length}</h4>
+                        <small>Лиг</small>
+                    </div>
+                </div>
+                <hr>
+                <div class="text-center">
+                    <small class="text-muted">
+                        <i class="fas fa-gift"></i> ${data.cost} | 
+                        <i class="fas fa-chart-line"></i> ${data.accuracy}
+                    </small>
+                </div>
+            `);
+        })
+        .fail(function() {
+            $('#quick-stats').html('<p class="text-muted">Данные недоступны</p>');
+        });
+}
+</script>
+{% endblock %}

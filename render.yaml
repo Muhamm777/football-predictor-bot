@@ -6,10 +6,48 @@ services:
   autoDeploy: true
   dockerfilePath: ./Dockerfile
   healthCheckPath: /health
+  disk:
+    name: data
+    mountPath: /data
+    sizeGB: 2
   envVars:
   - key: API_TOKEN
     sync: false
   - key: PORT
     value: 8080
   - key: WEB_BASE_URL
+    sync: false
+  - key: DB_PATH
+    value: /data/data.db
+  - key: USER_AGENT
+    value: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  - key: FOOTBALL_DATA_API_KEY
+    sync: false
+  - key: FREE_SYNTH_ODDS_MARGIN
+    value: 0.04
+  - key: FLASH_CACHE_TTL_SEC
+    value: 600
+  - key: DEEP_CRAWL_ENABLED
+    value: true
+  - key: BUILD_PICKS_CRON
+    value: "*/15 * * * *"
+  - key: TOP7_CRON
+    value: "*/10 * * * *"
+  - key: UNMATCHED_SUMMARY_CRON
+    value: "15 3 * * *"
+  - key: TOP7_HOURS_AHEAD
+    value: "6"
+  - key: TOP7_MIN_PROB
+    value: "0.55"
+  - key: TOP7_MIN_EV
+    value: "-0.02"
+  - key: TOP7_MAX_PER_LEAGUE
+    value: "2"
+  - key: TOP7_STABILITY_PROB
+    value: "0.02"
+  - key: TOP7_STABILITY_EV
+    value: "0.02"
+  - key: BOT_TOKEN
+    sync: false
+  - key: TELEGRAM_WEBHOOK_SECRET
     sync: false
