@@ -2,6 +2,10 @@ import httpx
 from typing import Any, Dict, List
 from config import REQUESTS_TIMEOUT, USER_AGENT
 from storage.db import get_today_fixtures
+import os
+import asyncio
+from datetime import datetime, timezone
+from scrapers.registry import register
 
 HEADERS = {"User-Agent": USER_AGENT}
 
@@ -30,3 +34,107 @@ async def fetch_team_stats() -> List[Dict[str, Any]]:
             "ga": 4,
         })
     return out
+
+async def fetch_fixtures() -> List[Dict[str, Any]]:
+    base = os.getenv("SSTATS_API_BASE", "https://api.sstats.net").rstrip("/")
+    key = os.getenv("SSTATS_API_KEY", "")
+    if not key:
+        return []
+    params = {
+        "upcoming": "true",
+        "limit": 100,
+        "apikey": key,
+    }
+    url = f"{base}/games/list"
+    out: List[Dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=REQUESTS_TIMEOUT, headers=HEADERS) as client:
+        try:
+            r = await client.get(url, params=params)
+            if r.status_code != 200:
+                return []
+            data = r.json()
+            items = data if isinstance(data, list) else data.get("items") or data
+            for g in items or []:
+                home = (g.get("homeTeam") or {}).get("name")
+                away = (g.get("awayTeam") or {}).get("name")
+                if not (home and away):
+                    continue
+                league = ((g.get("season") or {}).get("league") or {}).get("name") or ""
+                kickoff = g.get("date")
+                out.append({
+                    "league": league,
+                    "time": kickoff or "",
+                    "home": home,
+                    "away": away,
+                })
+        except Exception:
+            return []
+    return out
+
+def _extract_odds_1x2(odds_list: Any) -> Dict[str, float] | None:
+    try:
+        for m in odds_list or []:
+            if m.get("marketId") == 1:
+                arr = m.get("odds")
+                if not isinstance(arr, list):
+                    return None
+                vals = { (o.get("name") or "").lower(): float(o.get("value")) for o in arr if o is not None and o.get("value") is not None }
+                h = vals.get("home")
+                d = vals.get("draw")
+                a = vals.get("away")
+                if h and d and a:
+                    return {"home": h, "draw": d, "away": a}
+    except Exception:
+        return None
+    return None
+
+def _odds_to_probs(odds: Dict[str, float]) -> Dict[str, float]:
+    inv = {k: 1.0 / v for k, v in odds.items() if v and v > 0}
+    s = sum(inv.values()) or 1.0
+    return {k: v / s for k, v in inv.items()}
+
+async def fetch_odds_or_probabilities() -> List[Dict[str, Any]]:
+    base = os.getenv("SSTATS_API_BASE", "https://api.sstats.net").rstrip("/")
+    key = os.getenv("SSTATS_API_KEY", "")
+    if not key:
+        return []
+    params = {
+        "upcoming": "true",
+        "limit": 100,
+        "apikey": key,
+    }
+    url = f"{base}/games/list"
+    out: List[Dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=REQUESTS_TIMEOUT, headers=HEADERS) as client:
+        try:
+            r = await client.get(url, params=params)
+            if r.status_code != 200:
+                return []
+            data = r.json()
+            items = data if isinstance(data, list) else data.get("items") or data
+            for g in items or []:
+                home = (g.get("homeTeam") or {}).get("name")
+                away = (g.get("awayTeam") or {}).get("name")
+                if not (home and away):
+                    continue
+                odds = _extract_odds_1x2(g.get("odds"))
+                if not odds:
+                    continue
+                probs = _odds_to_probs(odds)
+                out.append({
+                    "home": home,
+                    "away": away,
+                    "probs": probs,
+                    "odds": odds,
+                })
+        except Exception:
+            return []
+    return out
+
+register(
+    name="sstats",
+    role="fixtures_odds",
+    fetch={"fixtures": fetch_fixtures, "odds_or_prob": fetch_odds_or_probabilities},
+    enabled=True,
+    notes="",
+)
