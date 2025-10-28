@@ -37,23 +37,28 @@ async def fetch_team_stats() -> List[Dict[str, Any]]:
 
 async def fetch_fixtures() -> List[Dict[str, Any]]:
     base = os.getenv("SSTATS_API_BASE", "https://api.sstats.net").rstrip("/")
-    key = os.getenv("SSTATS_API_KEY", "")
-    if not key:
-        return []
-    params = {
-        "upcoming": "true",
-        "limit": 100,
-        "apikey": key,
-    }
+    key = os.getenv("SSTATS_API_KEY") or os.getenv("SSTATS_APIKEY") or os.getenv("SSTATS_KEY") or ""
     url = f"{base}/games/list"
     out: List[Dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=REQUESTS_TIMEOUT, headers=HEADERS) as client:
         try:
-            r = await client.get(url, params=params)
-            if r.status_code != 200:
-                return []
-            data = r.json()
-            items = data if isinstance(data, list) else data.get("items") or data
+            q1 = {"upcoming": "true", "limit": 100}
+            if key:
+                q1["apikey"] = key
+            r = await client.get(url, params=q1)
+            items: Any = []
+            if r.status_code == 200:
+                data = r.json()
+                items = data if isinstance(data, list) else data.get("items") or data
+            if not items:
+                today = datetime.now(timezone.utc).date().isoformat()
+                q2 = {"Date": today, "limit": 100}
+                if key:
+                    q2["apikey"] = key
+                r2 = await client.get(url, params=q2)
+                if r2.status_code == 200:
+                    data2 = r2.json()
+                    items = data2 if isinstance(data2, list) else data2.get("items") or data2
             for g in items or []:
                 home = (g.get("homeTeam") or {}).get("name")
                 away = (g.get("awayTeam") or {}).get("name")
@@ -95,23 +100,28 @@ def _odds_to_probs(odds: Dict[str, float]) -> Dict[str, float]:
 
 async def fetch_odds_or_probabilities() -> List[Dict[str, Any]]:
     base = os.getenv("SSTATS_API_BASE", "https://api.sstats.net").rstrip("/")
-    key = os.getenv("SSTATS_API_KEY", "")
-    if not key:
-        return []
-    params = {
-        "upcoming": "true",
-        "limit": 100,
-        "apikey": key,
-    }
+    key = os.getenv("SSTATS_API_KEY") or os.getenv("SSTATS_APIKEY") or os.getenv("SSTATS_KEY") or ""
     url = f"{base}/games/list"
     out: List[Dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=REQUESTS_TIMEOUT, headers=HEADERS) as client:
         try:
-            r = await client.get(url, params=params)
-            if r.status_code != 200:
-                return []
-            data = r.json()
-            items = data if isinstance(data, list) else data.get("items") or data
+            q1 = {"upcoming": "true", "limit": 100}
+            if key:
+                q1["apikey"] = key
+            r = await client.get(url, params=q1)
+            items: Any = []
+            if r.status_code == 200:
+                data = r.json()
+                items = data if isinstance(data, list) else data.get("items") or data
+            if not items:
+                today = datetime.now(timezone.utc).date().isoformat()
+                q2 = {"Date": today, "limit": 100}
+                if key:
+                    q2["apikey"] = key
+                r2 = await client.get(url, params=q2)
+                if r2.status_code == 200:
+                    data2 = r2.json()
+                    items = data2 if isinstance(data2, list) else data2.get("items") or data2
             for g in items or []:
                 home = (g.get("homeTeam") or {}).get("name")
                 away = (g.get("awayTeam") or {}).get("name")
