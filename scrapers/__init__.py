@@ -8,6 +8,8 @@ from . import matchoutlook  # noqa: F401
 from . import soccer365     # noqa: F401
 from . import synth         # noqa: F401
 from . import sstats        # noqa: F401
+from . import forebet       # noqa: F401
+from . import statarea      # noqa: F401
 
 # Optionally keep placeholders disabled until implemented
 # from . import bigsoccer  # sentiment (disabled by default)
