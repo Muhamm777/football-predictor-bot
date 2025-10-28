@@ -6,6 +6,7 @@ import os
 import asyncio
 from datetime import datetime, timezone
 from scrapers.registry import register
+import logging
 
 HEADERS = {"User-Agent": USER_AGENT}
 
@@ -42,23 +43,35 @@ async def fetch_fixtures() -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=REQUESTS_TIMEOUT, headers=HEADERS) as client:
         try:
+            retries = int(os.getenv("SSTATS_RETRIES", "2") or "2")
+            items: Any = []
+            today = datetime.now(timezone.utc).date()
+            params_chain = []
             q1 = {"upcoming": "true", "limit": 100}
+            q2 = {"Date": today.isoformat(), "limit": 100}
+            q3 = {"From": today.isoformat(), "To": (today).isoformat(), "limit": 200}
             if key:
                 q1["apikey"] = key
-            r = await client.get(url, params=q1)
-            items: Any = []
-            if r.status_code == 200:
-                data = r.json()
-                items = data if isinstance(data, list) else data.get("items") or data
-            if not items:
-                today = datetime.now(timezone.utc).date().isoformat()
-                q2 = {"Date": today, "limit": 100}
-                if key:
-                    q2["apikey"] = key
-                r2 = await client.get(url, params=q2)
-                if r2.status_code == 200:
-                    data2 = r2.json()
-                    items = data2 if isinstance(data2, list) else data2.get("items") or data2
+                q2["apikey"] = key
+                q3["apikey"] = key
+            params_chain = [q1, q2, q3]
+            for qi in params_chain:
+                ok = False
+                for _ in range(max(1, retries)):
+                    r = await client.get(url, params=qi)
+                    if r.status_code == 200:
+                        try:
+                            data = r.json()
+                            items = data if isinstance(data, list) else data.get("items") or data
+                        except Exception:
+                            items = []
+                        if items:
+                            ok = True
+                            break
+                    await asyncio.sleep(0.3)
+                logging.info("sstats fixtures query done: params=%s status=%s items=%s", list(qi.keys()), getattr(r, "status_code", None), 0 if not items else (len(items) if isinstance(items, list) else 1))
+                if ok:
+                    break
             for g in items or []:
                 home = (g.get("homeTeam") or {}).get("name")
                 away = (g.get("awayTeam") or {}).get("name")
@@ -105,23 +118,35 @@ async def fetch_odds_or_probabilities() -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=REQUESTS_TIMEOUT, headers=HEADERS) as client:
         try:
+            retries = int(os.getenv("SSTATS_RETRIES", "2") or "2")
+            items: Any = []
+            today = datetime.now(timezone.utc).date()
+            params_chain = []
             q1 = {"upcoming": "true", "limit": 100}
+            q2 = {"Date": today.isoformat(), "limit": 100}
+            q3 = {"From": today.isoformat(), "To": (today).isoformat(), "limit": 200}
             if key:
                 q1["apikey"] = key
-            r = await client.get(url, params=q1)
-            items: Any = []
-            if r.status_code == 200:
-                data = r.json()
-                items = data if isinstance(data, list) else data.get("items") or data
-            if not items:
-                today = datetime.now(timezone.utc).date().isoformat()
-                q2 = {"Date": today, "limit": 100}
-                if key:
-                    q2["apikey"] = key
-                r2 = await client.get(url, params=q2)
-                if r2.status_code == 200:
-                    data2 = r2.json()
-                    items = data2 if isinstance(data2, list) else data2.get("items") or data2
+                q2["apikey"] = key
+                q3["apikey"] = key
+            params_chain = [q1, q2, q3]
+            for qi in params_chain:
+                ok = False
+                for _ in range(max(1, retries)):
+                    r = await client.get(url, params=qi)
+                    if r.status_code == 200:
+                        try:
+                            data = r.json()
+                            items = data if isinstance(data, list) else data.get("items") or data
+                        except Exception:
+                            items = []
+                        if items:
+                            ok = True
+                            break
+                    await asyncio.sleep(0.3)
+                logging.info("sstats odds query done: params=%s status=%s items=%s", list(qi.keys()), getattr(r, "status_code", None), 0 if not items else (len(items) if isinstance(items, list) else 1))
+                if ok:
+                    break
             for g in items or []:
                 home = (g.get("homeTeam") or {}).get("name")
                 away = (g.get("awayTeam") or {}).get("name")
